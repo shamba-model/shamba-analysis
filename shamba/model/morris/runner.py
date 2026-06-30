@@ -51,9 +51,11 @@ def _run_single_morris(args: _MorrisSampleArgs) -> np.ndarray:
         gwp=args.gwp,
         emission_factors=ef,
     )
-    soc = result.project_forward_soil_data.SOC  # shape (N_YEARS+1, 4)
-    soc_total = np.sum(soc, axis=1)             # shape (N_YEARS+1,)
-    return np.diff(soc_total)                   # shape (N_YEARS,)
+    base_emissions = result.emit_base_emissions
+    project_emissions = result.emit_project_emissions
+    emissions_diff = project_emissions - base_emissions
+
+    return emissions_diff                   # shape (N_YEARS,)
 
 
 def run_morris(
