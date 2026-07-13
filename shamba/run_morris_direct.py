@@ -30,6 +30,9 @@ import model.soil_params as SoilParams
 import model.soil_models.forward_soil_model as ForwardSoilModule
 import model.soil_models.inverse_soil_model as InverseSoilModule
 import model.common.constants as CONSTANTS
+import model.tree_params as TreeParams
+import model.crop_params as CropParams
+import model.tree_model as TreeModel
 from model.emit import EmissionFactors
 from model.morris.parameter_space import (
     default_bounds,
@@ -115,6 +118,25 @@ def main() -> None:
         + data_handler.validate_species_data(vector_input_data)
         + data_handler.validate_required_mgmt_keys(vector_input_data)
     )
+
+    # Load the three species-lookup tables once here, at the shared import/validate
+    # step, rather than lazily inside calculate_emissions.py. This ensures a malformed
+    # tree_params.csv/crop_params.csv/biomass_pool_params.csv is reported alongside the
+    # other input errors above, instead of surfacing as a mid-calculation crash.
+    tree_species_data = crop_species_data = pool_species_data = None
+    try:
+        tree_species_data = TreeParams.load_tree_species_data()
+    except ValueError as e:
+        validation_errors.append(str(e))
+    try:
+        crop_species_data = CropParams.load_crop_species_data()
+    except ValueError as e:
+        validation_errors.append(str(e))
+    try:
+        pool_species_data = TreeModel.load_biomass_pool_species_data()
+    except ValueError as e:
+        validation_errors.append(str(e))
+
     if validation_errors:
         raise ValueError("\n".join(validation_errors))
 
@@ -242,6 +264,9 @@ def main() -> None:
         base_input=vector_input_data,
         base_soil=soil_params,
         base_climate=climate,
+        tree_species_data=tree_species_data,
+        crop_species_data=crop_species_data,
+        pool_species_data=pool_species_data,
         create_forward_soil_model=ForwardSoilModel.create,
         create_inverse_soil_model=InverseSoilModel.create,
         n_proj_cohorts=args.n_proj_cohorts,

@@ -20,6 +20,9 @@ class _MorrisSampleArgs(NamedTuple):
     base_soil: SoilParamsData
     base_climate: ClimateData
     base_emission_factors: EmissionFactors
+    tree_species_data: Dict[int, Dict]
+    crop_species_data: Dict[int, Dict]
+    pool_species_data: Dict[int, Dict]
     create_forward_soil_model: Callable
     create_inverse_soil_model: Callable
     n_proj_cohorts: int
@@ -47,6 +50,9 @@ def _run_single_morris(args: _MorrisSampleArgs) -> np.ndarray:
         n_proj_cohorts=args.n_proj_cohorts,
         n_base_cohorts=args.n_base_cohorts,
         plot_index=args.plot_index,
+        tree_species_data=args.tree_species_data,
+        crop_species_data=args.crop_species_data,
+        pool_species_data=args.pool_species_data,
         allometry=args.allometry,
         gwp=args.gwp,
         emission_factors=ef,
@@ -69,6 +75,9 @@ def run_morris(
     n_proj_cohorts: int,
     n_base_cohorts: int,
     plot_index: int,
+    tree_species_data: Dict[int, Dict],
+    crop_species_data: Dict[int, Dict],
+    pool_species_data: Dict[int, Dict],
     base_emission_factors: EmissionFactors = EmissionFactors(),
     allometry: Optional[List[str]] = None,
     gwp: dict = CONSTANTS.GWP_list[CONSTANTS.DEFAULT_GWP],
@@ -91,6 +100,9 @@ def run_morris(
             base_soil=base_soil,
             base_climate=base_climate,
             base_emission_factors=base_emission_factors,
+            tree_species_data=tree_species_data,
+            crop_species_data=crop_species_data,
+            pool_species_data=pool_species_data,
             create_forward_soil_model=create_forward_soil_model,
             create_inverse_soil_model=create_inverse_soil_model,
             n_proj_cohorts=n_proj_cohorts,

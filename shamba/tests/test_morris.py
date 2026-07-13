@@ -6,11 +6,12 @@ runner.py (run_morris shape, compute_morris_indices columns).
 
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 from model.soil_params import SoilParamsData
 from model.climate import ClimateData
 from model.emit import EmissionFactors
+from model.common.calculate_emissions import handle_intervention
 from model.morris.parameter_space import (
     apply_design_row,
     default_bounds,
@@ -170,13 +171,9 @@ def test_run_morris_returns_correct_shape():
     n_traj = 4
     n_rows = n_traj * (k + 1)
 
-    # Fake SOC array: (N_YEARS+1, 4)
-    fake_soc = np.ones((N_YEARS + 1, 4)) * 10.0
-    fake_project_soil = MagicMock()
-    fake_project_soil.SOC = fake_soc
-
     fake_result = MagicMock()
-    fake_result.project_forward_soil_data = fake_project_soil
+    fake_result.emit_project_emissions = np.full(N_YEARS, 12.0)
+    fake_result.emit_base_emissions = np.full(N_YEARS, 4.0)
 
     X = np.zeros((n_rows, k))
     param_names = ["cy0", "clay", "temp_delta"]
@@ -185,7 +182,12 @@ def test_run_morris_returns_correct_shape():
     base_climate = _make_climate()
     base_input = {}
 
-    with patch("model.morris.runner.handle_intervention", return_value=fake_result), \
+    # create_autospec (not a bare MagicMock) so a call missing a required
+    # handle_intervention() kwarg raises TypeError here, instead of silently
+    # succeeding and hiding a wiring regression.
+    mock_handle_intervention = create_autospec(handle_intervention, return_value=fake_result)
+
+    with patch("model.morris.runner.handle_intervention", mock_handle_intervention), \
          patch("model.morris.runner.concurrent.futures.ProcessPoolExecutor", _InProcessExecutor):
         Y = run_morris(
             X=X,
@@ -193,6 +195,9 @@ def test_run_morris_returns_correct_shape():
             base_input=base_input,
             base_soil=base_soil,
             base_climate=base_climate,
+            tree_species_data={},
+            crop_species_data={},
+            pool_species_data={},
             create_forward_soil_model=MagicMock(),
             create_inverse_soil_model=MagicMock(),
             n_proj_cohorts=1,
@@ -201,6 +206,48 @@ def test_run_morris_returns_correct_shape():
         )
 
     assert Y.shape == (n_rows, N_YEARS)
+
+
+def test_run_morris_threads_species_data_into_handle_intervention():
+    """run_morris passes the caller's tree/crop/pool species data through to
+    handle_intervention() unperturbed — regression test for the bug where
+    these three required arguments were silently omitted."""
+    N_YEARS = 2
+    X = np.zeros((1, 1))
+    param_names = ["cy0"]
+
+    fake_result = MagicMock()
+    fake_result.emit_project_emissions = np.full(N_YEARS, 1.0)
+    fake_result.emit_base_emissions = np.full(N_YEARS, 0.0)
+
+    tree_species_data = {1: {"species": 1}}
+    crop_species_data = {2: {"species": "maize"}}
+    pool_species_data = {1: {"turnover": np.zeros(5)}}
+
+    mock_handle_intervention = create_autospec(handle_intervention, return_value=fake_result)
+
+    with patch("model.morris.runner.handle_intervention", mock_handle_intervention), \
+         patch("model.morris.runner.concurrent.futures.ProcessPoolExecutor", _InProcessExecutor):
+        run_morris(
+            X=X,
+            param_names=param_names,
+            base_input={},
+            base_soil=_make_soil(),
+            base_climate=_make_climate(),
+            tree_species_data=tree_species_data,
+            crop_species_data=crop_species_data,
+            pool_species_data=pool_species_data,
+            create_forward_soil_model=MagicMock(),
+            create_inverse_soil_model=MagicMock(),
+            n_proj_cohorts=1,
+            n_base_cohorts=1,
+            plot_index=0,
+        )
+
+    _, call_kwargs = mock_handle_intervention.call_args
+    assert call_kwargs["tree_species_data"] is tree_species_data
+    assert call_kwargs["crop_species_data"] is crop_species_data
+    assert call_kwargs["pool_species_data"] is pool_species_data
 
 
 # ---------------------------------------------------------------------------
