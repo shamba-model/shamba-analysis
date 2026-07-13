@@ -57,11 +57,6 @@ def create(crop_params, no_of_years, crop_yield, left_in_field) -> CropModelData
     }
 
     schema = ClimateDataSchema()
-    errors = schema.validate(raw_crop_model_data)
-
-    if errors != {}:
-        print(f"Errors in crop model data: {str(errors)}")
-
     return schema.load(raw_crop_model_data)  # type: ignore
 
 
@@ -125,10 +120,10 @@ def save(crop_model, file="crop_model.csv"):
 
 
 def get_crop_models_and_crop_params(
-    input_data, no_of_years, start_index, end_index, crop_getter
+    input_data, no_of_years, start_index, end_index, crop_getter, species_data
 ):
     results = [
-        crop_getter(input_data, no_of_years, index)
+        crop_getter(input_data, no_of_years, index, species_data)
         for index in range(start_index, end_index + 1)
     ]
 
@@ -140,23 +135,23 @@ def get_crop_models_and_crop_params(
 
 
 def get_crop_bases(
-    input_data, no_of_years, start_index, end_index
+    input_data, no_of_years, start_index, end_index, species_data
 ) -> Tuple[List[CropModelData], List[CropParamsData]]:
     return get_crop_models_and_crop_params(
-        input_data, no_of_years, start_index, end_index, get_crop_base
+        input_data, no_of_years, start_index, end_index, get_crop_base, species_data
     )
 
 
 def get_crop_projects(
-    input_data, no_of_years, start_index, end_index
+    input_data, no_of_years, start_index, end_index, species_data
 ) -> Tuple[List[CropModelData], List[CropParamsData]]:
     return get_crop_models_and_crop_params(
-        input_data, no_of_years, start_index, end_index, get_crop_project
+        input_data, no_of_years, start_index, end_index, get_crop_project, species_data
     )
 
 
 def get_crop_data(
-    input_data, no_of_years, prefix, index
+    input_data, no_of_years, prefix, index, species_data
 ) -> Tuple[CropModelData, CropParamsData]:
     scenario = "baseline" if "base" in prefix else "project"
     try:
@@ -169,7 +164,7 @@ def get_crop_data(
             f"(expected key {e} in input). "
             f"Check that all declared crop species have matching data in your input file."
         )
-    crop_params = create_crop_params_from_species_index(spp)
+    crop_params = create_crop_params_from_species_index(spp, species_data=species_data)
     crop_model = create(
         crop_params=crop_params,
         no_of_years=no_of_years,
@@ -181,12 +176,12 @@ def get_crop_data(
 
 
 def get_crop_base(
-    input_data, no_of_years, index
+    input_data, no_of_years, index, species_data
 ) -> Tuple[CropModelData, CropParamsData]:
-    return get_crop_data(input_data, no_of_years, "crop_base", index)
+    return get_crop_data(input_data, no_of_years, "crop_base", index, species_data)
 
 
 def get_crop_project(
-    input_data, no_of_years, index
+    input_data, no_of_years, index, species_data
 ) -> Tuple[CropModelData, CropParamsData]:
-    return get_crop_data(input_data, no_of_years, "crop_proj", index)
+    return get_crop_data(input_data, no_of_years, "crop_proj", index, species_data)

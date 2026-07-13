@@ -3,6 +3,8 @@
 """Module containing Tree class."""
 
 import os
+import re
+from typing import Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -177,12 +179,133 @@ def create(
     }
 
     schema = TreeModelSchema()
-    errors = schema.validate(params)
-
-    if errors != {}:
-        print(f"Errors in tree model: {errors}")
-
     return schema.load(params)  # type: ignore
+
+
+_BIOMASS_POOLS = ("leaf", "branch", "stem", "croot", "froot")
+
+# Per-species fields eligible for MC distribution sampling — the single source of
+# truth for both the key-matching pattern below and sampler.sample_species_params().
+BIOMASS_POOL_PARAM_FIELDS = ("turnover", "alloc", "thinning_fraction", "mortality_fraction")
+
+# Keys are prefixed with the species-lookup table name ("pool_") rather than bare
+# field names, for consistency with the tree/crop tables' prefix convention
+# (see tree_params.py).
+# Matches MC distribution keys for per-species biomass-pool parameter sampling, e.g.
+# "pool_turnover_sp2", "pool_alloc_sp1".
+BIOMASS_POOL_DIST_KEY_PATTERN = re.compile(
+    rf"^pool_({'|'.join(BIOMASS_POOL_PARAM_FIELDS)})_sp(\d+)$"
+)
+
+
+def load_biomass_pool_species_data(
+    filename: str = "biomass_pool_params.csv",
+) -> dict:
+    """Load per-species biomass pool params from csv, keyed by each row's own
+    Sc (species code) and pool name columns — not by row position.
+
+    The file must contain exactly one row per (species, pool) combination,
+    covering leaf/branch/stem/croot/froot for each species — rows for a
+    species may appear in any order.
+
+    Args:
+        filename: Name of the CSV file to load.
+
+    Returns:
+        Dict mapping species code to a dict with turnover, alloc,
+        thinning_fraction, and mortality_fraction arrays (one value per pool,
+        in leaf/branch/stem/croot/froot order).
+    """
+    resolved_path = csv_handler.resolve_csv_path(filename)
+    try:
+        numeric = np.atleast_2d(
+            np.genfromtxt(resolved_path, skip_header=1, usecols=(0, 2, 3, 4, 5), delimiter=",", comments="#")
+        )
+        pool_names = np.atleast_1d(
+            np.genfromtxt(resolved_path, skip_header=1, usecols=(1,), dtype=str, delimiter=",", comments="#")
+        )
+    except ValueError as e:
+        raise ValueError(
+            f"'{filename}' could not be read as a biomass pool params file. It must have "
+            f"columns 'Sc,pool,TO,AL,THf,DTf' — an older file without the 'Sc' column is "
+            f"no longer supported and needs to be migrated. Original error: {e}"
+        ) from e
+
+    if np.isnan(numeric).any():
+        bad_rows = [r + 2 for r in np.where(np.isnan(numeric).any(axis=1))[0]]
+        raise ValueError(
+            f"'{filename}' has a missing/blank numeric value in row(s) {bad_rows} "
+            f"(counting the header as row 1). Every row must have a value in "
+            f"every column (Sc, TO, AL, THf, DTf)."
+        )
+
+    rows_by_species: dict = {}
+    for i in range(numeric.shape[0]):
+        species = int(numeric[i, 0])
+        pool = str(pool_names[i]).strip().lower()
+        if pool not in _BIOMASS_POOLS:
+            raise ValueError(
+                f"'{filename}' row {i + 2} has pool name '{pool_names[i]}', "
+                f"which is not one of {_BIOMASS_POOLS}."
+            )
+        species_rows = rows_by_species.setdefault(species, {})
+        if pool in species_rows:
+            raise ValueError(
+                f"'{filename}' has more than one '{pool}' row for species code {species}."
+            )
+        species_rows[pool] = numeric[i, 1:]
+
+    species_data = {}
+    for species, pools in rows_by_species.items():
+        missing = [p for p in _BIOMASS_POOLS if p not in pools]
+        if missing:
+            raise ValueError(
+                f"'{filename}' is missing row(s) for pool(s) {missing} for species "
+                f"code {species}. Every species needs exactly one row per pool: "
+                f"{_BIOMASS_POOLS}."
+            )
+        ordered = np.array([pools[p] for p in _BIOMASS_POOLS])
+
+        # Branch and stem 'AL' are a split of total above-ground biomass
+        # (SHAMBA_ModelDescription_v1.2, Sec 4.3.2 / Table 3: alstem+albranch
+        # ratios always sum to 1 across every species in the reference data).
+        branch_al, stem_al = ordered[1, 1], ordered[2, 1]
+        if not np.isclose(branch_al + stem_al, 1.0, atol=1e-6):
+            raise ValueError(
+                f"'{filename}': branch and stem 'AL' (allocation) values are a split of "
+                f"total aboveground biomass and must sum to 1."
+                f" For {species} found branch={branch_al}, stem={stem_al} (sum={branch_al + stem_al})."
+            )
+
+        species_data[species] = {
+            "turnover": ordered[:, 0],
+            "alloc": ordered[:, 1],
+            "thinning_fraction": ordered[:, 2],
+            "mortality_fraction": ordered[:, 3],
+        }
+    return species_data
+
+
+def get_species_pool_data(species: int, pool_species_data: Dict[int, Dict]) -> Dict:
+    """Look up one species' biomass pool params, with a plain-language error
+    if the species is missing from the species-lookup table.
+
+    Args:
+        species: species code (Sc column in tree_params.csv) to look up.
+        pool_species_data: pre-loaded biomass pool data (as returned by
+            load_biomass_pool_species_data()), loaded once per run by the caller.
+
+    Returns:
+        Dict with turnover, alloc, thinning_fraction, and mortality_fraction
+        arrays (one value per pool, in leaf/branch/stem/croot/froot order).
+    """
+    if species not in pool_species_data:
+        raise KeyError(
+            f"No biomass pool parameters found for species '{species}' "
+            "in biomass_pool_params.csv. Add a 5-row block (leaf, branch, stem, "
+            "croot, froot) for this species, in the same order as tree_params.csv."
+        )
+    return pool_species_data[species]
 
 
 def from_defaults(
@@ -190,6 +313,7 @@ def from_defaults(
     tree_growth,
     no_of_years,
     stand_density,
+    pool_species_data,
     year_planted=0,
     thinning=None,
     thinning_fraction=None,
@@ -199,14 +323,28 @@ def from_defaults(
     """Use defaults for pool params.
     Can override defaults for thinning_fraction and mortality_fraction by providing arguments.
 
+    Args:
+        pool_species_data: pre-loaded biomass pool data (as returned by
+            load_biomass_pool_species_data()), loaded once per run by the caller.
     """
 
-    data = csv_handler.read_csv("biomass_pool_params.csv", cols=(1, 2, 3, 4))
-    turnover = data[:, 0]
-    alloc = data[:, 1]
-    temp_thinning_fraction = data[:, 2]
-    temp_mortality_fraction = data[:, 3]
+    species_pool_data = get_species_pool_data(tree_params.species, pool_species_data)
+    turnover = species_pool_data["turnover"]
+    # pool_data may be a dict shared across every cohort of this species (see
+    # pool_species_data above) rather than freshly read each call — copy
+    # before any in-place mutation, or it corrupts the value for every other
+    # cohort using the same species.
+    alloc = species_pool_data["alloc"].copy()
+    temp_thinning_fraction = species_pool_data["thinning_fraction"]
+    temp_mortality_fraction = species_pool_data["mortality_fraction"]
 
+    # Branch alloc is derived from stem, not read independently — branch+stem
+    # is the split of total AGB (Sec 4.3.2), and this must hold even when
+    # stem has been perturbed by MC sampling. sample_species_params() has no
+    # knowledge of this identity — it draws branch and stem independently — so
+    # whatever branch value it sampled is discarded here and re-derived from
+    # stem's (possibly sampled) value instead.
+    alloc[1] = 1 - alloc[2]
     # Take into account croot alloc - rs * stem alloc
     alloc[3] = alloc[2] * tree_params.root_to_shoot
 
@@ -505,7 +643,7 @@ def save(tree_model, file="tree_model.csv"):
 
     # biomass
     biomass_file = file.split(".csv")[0] + "_biomass.csv"
-    cols = ["leaf", "branch", "stem", "croot", "froot"]
+    cols = list(_BIOMASS_POOLS)
     csv_handler.print_csv(
         biomass_file,
         tree_model.stand_biomass,
@@ -526,6 +664,7 @@ def create_tree_projects(
     no_of_years,
     cohort_count,
     type,
+    pool_species_data,
 ):
     return [
         from_defaults(
@@ -538,6 +677,7 @@ def create_tree_projects(
             mortality=mortalities_project[i],
             mortality_fraction=mortality_fractions_project[i],
             no_of_years=no_of_years,
+            pool_species_data=pool_species_data,
         )
         for i in range(cohort_count)
     ]
