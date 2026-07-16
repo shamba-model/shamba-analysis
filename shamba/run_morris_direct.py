@@ -34,10 +34,15 @@ import model.tree_params as TreeParams
 import model.crop_params as CropParams
 import model.tree_model as TreeModel
 from model.emit import EmissionFactors
+from model.soil_models.soil_model_params import RothCParams
 from model.morris.parameter_space import (
     default_bounds,
     build_salib_problem,
     load_bounds_override,
+)
+from model.morris.parameter_registry import (
+    MorrisSpeciesContext,
+    validate_bounds_parameter_names,
 )
 from model.morris.runner import (
     run_morris,
@@ -140,6 +145,12 @@ def main() -> None:
     if validation_errors:
         raise ValueError("\n".join(validation_errors))
 
+    species_ctx = MorrisSpeciesContext(
+        tree_species_data=tree_species_data,
+        crop_species_data=crop_species_data,
+        pool_species_data=pool_species_data,
+    )
+
     # --- Resolve climate and soil ---
     climate_vectors = None
     if "temp" in vector_input_data:
@@ -170,7 +181,16 @@ def main() -> None:
 
     if args.bounds_file is not None:
         overrides = load_bounds_override(args.bounds_file)
+        validate_bounds_parameter_names(overrides, species_ctx)
         bounds_dict.update(overrides)
+    else:
+        print(
+            "WARNING: no --bounds-file given. Running with the illustrative default "
+            "bounds only (soil, climate, emission-factor, and management scales) — "
+            "RothC, tree, crop, and biomass-pool parameters are recognised but not "
+            "included unless supplied via --bounds-file. This default set is not a "
+            "validated sensitivity configuration."
+        )
 
     # The next few blocks remove parameters from bounds_dict if they are not relevant to the input data.
 
@@ -274,6 +294,7 @@ def main() -> None:
         n_base_cohorts=args.n_base_cohorts,
         plot_index=0,
         base_emission_factors=EmissionFactors(),
+        base_soil_model_params=RothCParams(),
         allometry=[CONSTANTS.DEFAULT_ALLOMORPHY] * (args.n_base_cohorts + args.n_proj_cohorts),
         gwp=CONSTANTS.GWP_list[CONSTANTS.DEFAULT_GWP],
         on_progress=lambda done, total: print(f"  {done}/{total} runs complete"),
