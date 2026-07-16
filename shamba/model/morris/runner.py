@@ -10,6 +10,7 @@ from model.common.calculate_emissions import handle_intervention
 from model.emit import EmissionFactors
 from model.climate import ClimateData
 from model.soil_params import SoilParamsData
+from model.soil_models.soil_model_params import SoilModelParams, RothCParams
 from model.morris.parameter_space import apply_design_row
 
 
@@ -20,6 +21,7 @@ class _MorrisSampleArgs(NamedTuple):
     base_soil: SoilParamsData
     base_climate: ClimateData
     base_emission_factors: EmissionFactors
+    base_soil_model_params: SoilModelParams
     tree_species_data: Dict[int, Dict]
     crop_species_data: Dict[int, Dict]
     pool_species_data: Dict[int, Dict]
@@ -33,29 +35,36 @@ class _MorrisSampleArgs(NamedTuple):
 
 
 def _run_single_morris(args: _MorrisSampleArgs) -> np.ndarray:
-    input_dict, soil, climate, ef = apply_design_row(
+    design = apply_design_row(
         x=args.x,
         param_names=args.param_names,
         base_input=args.base_input,
         base_soil=args.base_soil,
         base_climate=args.base_climate,
         base_emission_factors=args.base_emission_factors,
+        base_tree_species_data=args.tree_species_data,
+        base_crop_species_data=args.crop_species_data,
+        base_pool_species_data=args.pool_species_data,
+        base_soil_model_params=args.base_soil_model_params,
     )
     result = handle_intervention(
-        intervention_input=input_dict,
-        climate=climate,
-        soil=soil,
+        intervention_input=design.input_dict,
+        climate=design.climate,
+        soil=design.soil,
         create_forward_soil_model=args.create_forward_soil_model,
         create_inverse_soil_model=args.create_inverse_soil_model,
         n_proj_cohorts=args.n_proj_cohorts,
         n_base_cohorts=args.n_base_cohorts,
         plot_index=args.plot_index,
-        tree_species_data=args.tree_species_data,
-        crop_species_data=args.crop_species_data,
-        pool_species_data=args.pool_species_data,
+        tree_species_data=design.tree_species_data,
+        crop_species_data=design.crop_species_data,
+        pool_species_data=design.pool_species_data,
         allometry=args.allometry,
         gwp=args.gwp,
-        emission_factors=ef,
+        emission_factors=design.emission_factors,
+        soil_model_params=design.soil_model_params,
+        tree_root_in_top_30=design.tree_root_in_top_30,
+        crop_root_in_top_30=design.crop_root_in_top_30,
     )
     base_emissions = result.emit_base_emissions
     project_emissions = result.emit_project_emissions
@@ -79,6 +88,7 @@ def run_morris(
     crop_species_data: Dict[int, Dict],
     pool_species_data: Dict[int, Dict],
     base_emission_factors: EmissionFactors = EmissionFactors(),
+    base_soil_model_params: SoilModelParams = RothCParams(),
     allometry: Optional[List[str]] = None,
     gwp: dict = CONSTANTS.GWP_list[CONSTANTS.DEFAULT_GWP],
     on_progress: Optional[Callable[[int, int], None]] = None,
@@ -100,6 +110,7 @@ def run_morris(
             base_soil=base_soil,
             base_climate=base_climate,
             base_emission_factors=base_emission_factors,
+            base_soil_model_params=base_soil_model_params,
             tree_species_data=tree_species_data,
             crop_species_data=crop_species_data,
             pool_species_data=pool_species_data,

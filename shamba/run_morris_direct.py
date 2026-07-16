@@ -174,13 +174,14 @@ def main() -> None:
 
     # The next few blocks remove parameters from bounds_dict if they are not relevant to the input data.
 
-    # tree_biomass_scale: skip if no trees are present (i.e. no proj_plant_dens1 key in the input).
+    # Stand density scales: skip if no trees are present (i.e. no plant_dens keys in the input).
     has_trees = any(
         k.startswith("proj_plant_dens") or k.startswith("base_plant_dens")
         for k in vector_input_data
         )
     if not has_trees:
-        bounds_dict.pop("tree_biomass_scale", None)
+        bounds_dict.pop("base_stand_density_scale", None)
+        bounds_dict.pop("proj_stand_density_scale", None)
 
     # Filter out management parameters that have no effect because the
     # underlying quantity is zero everywhere (e.g. no fertiliser/litter
@@ -196,8 +197,8 @@ def main() -> None:
     _qty_dependent = {
         "base_sf_qty_scale": ("base_sf_qty1",),
         "proj_sf_qty_scale": ("proj_sf_qty1",),
-        "base_sf_n1": ("base_sf_qty1",),
-        "proj_sf_n1": ("proj_sf_qty1",),
+        "base_sf_n_scale": ("base_sf_qty1",),
+        "proj_sf_n_scale": ("proj_sf_qty1",),
         "base_lit_qty_scale": ("base_lit_qty1",),
         "proj_lit_qty_scale": ("proj_lit_qty1",),
         # Emission factors below are shared across base/project (not split
