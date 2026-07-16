@@ -125,6 +125,7 @@ def create(
     year_planted=0,
     thinning=None,
     mortality=None,
+    tree_root_in_top_30: float = CONSTANTS.TREE_ROOT_IN_TOP_30,
 ) -> TreeModel:
     """Intialise TreeModel object (run biomass model, essentially).
 
@@ -136,6 +137,8 @@ def create(
         initial_stand_density    initial stand density
         thinning                vector with thinning regime for each year
         mortality                vector with mortality regime for each year
+        tree_root_in_top_30      fraction of below-ground tree biomass located in the
+                                 top 30cm of soil (default: CONSTANTS.TREE_ROOT_IN_TOP_30)
 
     Returns:
         tree_model: TreeModel object
@@ -162,6 +165,7 @@ def create(
         thinning=thinning,
         mortality=mortality,
         no_of_years=no_of_years,
+        tree_root_in_top_30=tree_root_in_top_30,
     )
 
     params = {
@@ -319,6 +323,7 @@ def from_defaults(
     thinning_fraction=None,
     mortality=None,
     mortality_fraction=None,
+    tree_root_in_top_30: float = CONSTANTS.TREE_ROOT_IN_TOP_30,
 ):
     """Use defaults for pool params.
     Can override defaults for thinning_fraction and mortality_fraction by providing arguments.
@@ -373,6 +378,7 @@ def from_defaults(
         initial_stand_density=stand_density,
         thinning=thinning,
         mortality=mortality,
+        tree_root_in_top_30=tree_root_in_top_30,
     )
 
 def calculate_fluxes(flux, pools, input_params, year_index):
@@ -404,6 +410,7 @@ def get_inputs(
     year_planted,
     initial_stand_dens,
     no_of_years,
+    tree_root_in_top_30: float = CONSTANTS.TREE_ROOT_IN_TOP_30,
 ):
     """
     Calculate and return residues and soil inputs from the tree.
@@ -540,9 +547,9 @@ def get_inputs(
         "DMoff": np.zeros(len(C[:, 0])),
     }
     output["below"] = {
-        "carbon": 0.001 * CONSTANTS.TREE_ROOT_IN_TOP_30 * (C[:, 3] + C[:, 4]),
-        "nitrogen": 0.001 * CONSTANTS.TREE_ROOT_IN_TOP_30 * (N[:, 3] + N[:, 4]),
-        "DMon": 0.001 * CONSTANTS.TREE_ROOT_IN_TOP_30 * (DM[:, 3] + DM[:, 4]),
+        "carbon": 0.001 * tree_root_in_top_30 * (C[:, 3] + C[:, 4]),
+        "nitrogen": 0.001 * tree_root_in_top_30 * (N[:, 3] + N[:, 4]),
+        "DMon": 0.001 * tree_root_in_top_30 * (DM[:, 3] + DM[:, 4]),
         "DMoff": np.zeros(len(C[:, 0])),
     }
     
@@ -665,6 +672,7 @@ def create_tree_projects(
     cohort_count,
     type,
     pool_species_data,
+    tree_root_in_top_30: float = CONSTANTS.TREE_ROOT_IN_TOP_30,
 ):
     return [
         from_defaults(
@@ -678,6 +686,7 @@ def create_tree_projects(
             mortality_fraction=mortality_fractions_project[i],
             no_of_years=no_of_years,
             pool_species_data=pool_species_data,
+            tree_root_in_top_30=tree_root_in_top_30,
         )
         for i in range(cohort_count)
     ]

@@ -43,24 +43,38 @@ class ClimateDataSchema(Schema):
         return CropModelData(**data)
 
 
-def create(crop_params, no_of_years, crop_yield, left_in_field) -> CropModelData:
+def create(
+    crop_params,
+    no_of_years,
+    crop_yield,
+    left_in_field,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
+) -> CropModelData:
     """Args:
     crop_params: CropParams object with crop params
     crop_yield: dry matter yield of the crop in t C ha^-1
     left_in_field: fraction of residues left in field post-harvest
+    crop_root_in_top_30: fraction of below-ground crop biomass located in the
+        top 30cm of soil (default: CONSTANTS.CROP_ROOT_IN_TOP_30)
     """
     raw_crop_model_data = {
         "crop_params": vars(
             crop_params
         ),  # We need to convert this to a dictionary for validation
-        "output": get_inputs(crop_params, no_of_years, crop_yield, left_in_field),
+        "output": get_inputs(crop_params, no_of_years, crop_yield, left_in_field, crop_root_in_top_30),
     }
 
     schema = ClimateDataSchema()
     return schema.load(raw_crop_model_data)  # type: ignore
 
 
-def get_inputs(crop_params, no_of_years, crop_yield, left_in_field):
+def get_inputs(
+    crop_params,
+    no_of_years,
+    crop_yield,
+    left_in_field,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
+):
     """Calculate and return soil carbon inputs, nitrogen inputs,
     on-farm residues, and off-farm residues from soil parameters.
 
@@ -81,7 +95,7 @@ def get_inputs(crop_params, no_of_years, crop_yield, left_in_field):
     residue *= np.ones(no_of_years)  # convert to array
     residue_AG = residue * left_in_field
     residue_BG = crop_yield + residue
-    residue_BG *= crop_params.root_to_shoot * CONSTANTS.CROP_ROOT_IN_TOP_30
+    residue_BG *= crop_params.root_to_shoot * crop_root_in_top_30
 
     output = {}
 
@@ -120,10 +134,11 @@ def save(crop_model, file="crop_model.csv"):
 
 
 def get_crop_models_and_crop_params(
-    input_data, no_of_years, start_index, end_index, crop_getter, species_data
+    input_data, no_of_years, start_index, end_index, crop_getter, species_data,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ):
     results = [
-        crop_getter(input_data, no_of_years, index, species_data)
+        crop_getter(input_data, no_of_years, index, species_data, crop_root_in_top_30)
         for index in range(start_index, end_index + 1)
     ]
 
@@ -135,23 +150,28 @@ def get_crop_models_and_crop_params(
 
 
 def get_crop_bases(
-    input_data, no_of_years, start_index, end_index, species_data
+    input_data, no_of_years, start_index, end_index, species_data,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ) -> Tuple[List[CropModelData], List[CropParamsData]]:
     return get_crop_models_and_crop_params(
-        input_data, no_of_years, start_index, end_index, get_crop_base, species_data
+        input_data, no_of_years, start_index, end_index, get_crop_base, species_data,
+        crop_root_in_top_30,
     )
 
 
 def get_crop_projects(
-    input_data, no_of_years, start_index, end_index, species_data
+    input_data, no_of_years, start_index, end_index, species_data,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ) -> Tuple[List[CropModelData], List[CropParamsData]]:
     return get_crop_models_and_crop_params(
-        input_data, no_of_years, start_index, end_index, get_crop_project, species_data
+        input_data, no_of_years, start_index, end_index, get_crop_project, species_data,
+        crop_root_in_top_30,
     )
 
 
 def get_crop_data(
-    input_data, no_of_years, prefix, index, species_data
+    input_data, no_of_years, prefix, index, species_data,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ) -> Tuple[CropModelData, CropParamsData]:
     scenario = "baseline" if "base" in prefix else "project"
     try:
@@ -170,18 +190,21 @@ def get_crop_data(
         no_of_years=no_of_years,
         crop_yield=crop_yield,
         left_in_field=left_in_field,
+        crop_root_in_top_30=crop_root_in_top_30,
     )
 
     return crop_model, crop_params
 
 
 def get_crop_base(
-    input_data, no_of_years, index, species_data
+    input_data, no_of_years, index, species_data,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ) -> Tuple[CropModelData, CropParamsData]:
-    return get_crop_data(input_data, no_of_years, "crop_base", index, species_data)
+    return get_crop_data(input_data, no_of_years, "crop_base", index, species_data, crop_root_in_top_30)
 
 
 def get_crop_project(
-    input_data, no_of_years, index, species_data
+    input_data, no_of_years, index, species_data,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ) -> Tuple[CropModelData, CropParamsData]:
-    return get_crop_data(input_data, no_of_years, "crop_proj", index, species_data)
+    return get_crop_data(input_data, no_of_years, "crop_proj", index, species_data, crop_root_in_top_30)

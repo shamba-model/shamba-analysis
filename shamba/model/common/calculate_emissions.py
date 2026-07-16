@@ -55,6 +55,7 @@ def get_tree_model_data(
     allometry: List[str],
     tree_species_data: Dict[int, Dict],
     pool_species_data: Dict[int, Dict],
+    tree_root_in_top_30: float = CONSTANTS.TREE_ROOT_IN_TOP_30,
 ) -> GetTreeModelReturnData:
     # Tree params: read species codes directly from vector-format keys
     base_tree_params = [
@@ -164,6 +165,7 @@ def get_tree_model_data(
         cohort_count=no_of_base_cohorts,
         type = "base",
         pool_species_data=pool_species_data,
+        tree_root_in_top_30=tree_root_in_top_30,
     )
 
     tree_projects = TreeModel.create_tree_projects(
@@ -178,6 +180,7 @@ def get_tree_model_data(
         cohort_count=no_of_proj_cohorts,
         type = "proj",
         pool_species_data=pool_species_data,
+        tree_root_in_top_30=tree_root_in_top_30,
     )
 
     return GetTreeModelReturnData(
@@ -250,6 +253,7 @@ def get_crop_model_data(
     intervention_input: Dict[str, Union[float, int]],
     no_of_years: int,
     crop_species_data: Dict[int, Dict],
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ) -> GetCropModelReturnData:
     n_crop_base = sum(1 for i in range(1, 100) if f"crop_base_spp{i}" in intervention_input)
     n_crop_proj = sum(1 for i in range(1, 100) if f"crop_proj_spp{i}" in intervention_input)
@@ -260,6 +264,7 @@ def get_crop_model_data(
         start_index=1,
         end_index=n_crop_base,
         species_data=crop_species_data,
+        crop_root_in_top_30=crop_root_in_top_30,
     )
     crop_project, crop_par_project = CropModel.get_crop_projects(
         input_data=intervention_input,
@@ -267,6 +272,7 @@ def get_crop_model_data(
         start_index=1,
         end_index=n_crop_proj,
         species_data=crop_species_data,
+        crop_root_in_top_30=crop_root_in_top_30,
     )
 
     return GetCropModelReturnData(
@@ -624,6 +630,8 @@ def handle_intervention(
     gwp: dict = CONSTANTS.GWP_list[CONSTANTS.DEFAULT_GWP],
     emission_factors: Emit.EmissionFactors = Emit.EmissionFactors(),
     soil_model_params: Optional[SoilModelParams] = None,
+    tree_root_in_top_30: float = CONSTANTS.TREE_ROOT_IN_TOP_30,
+    crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
 ):
     no_of_years = get_int(CONSTANTS.NO_OF_YEARS_KEY, intervention_input)
 
@@ -645,6 +653,7 @@ def handle_intervention(
         no_of_years=no_of_years,
         intervention_input=intervention_input,
         crop_species_data=crop_species_data,
+        crop_root_in_top_30=crop_root_in_top_30,
     )
 
     fire_model_data = get_fire_model_data(
@@ -664,6 +673,7 @@ def handle_intervention(
         allometry=allometry,
         tree_species_data=tree_species_data,
         pool_species_data=pool_species_data,
+        tree_root_in_top_30=tree_root_in_top_30,
     )
 
     # ----------
