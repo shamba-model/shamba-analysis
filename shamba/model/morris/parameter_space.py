@@ -9,7 +9,6 @@ from model.emit import EmissionFactors
 from model.soil_models.soil_model_params import SoilModelParams, RothCParams
 from model.monte_carlo.model_parameter_distributions import MODEL_PARAMETER_DISTRIBUTIONS
 from model.common.constants import (
-    ef_burn_default,
     ef_N_inputs_default,
     combustion_factor_default,
     volatile_frac_organic_fertiliser_default,
@@ -24,6 +23,8 @@ from model.morris.parameter_registry import (
     MorrisSpeciesContext,
     TREE_SPECIES_ELEMENT_DIST_KEY_PATTERN,
     BIOMASS_POOL_ELEMENT_DIST_KEY_PATTERN,
+    TREE_SPECIES_SCALE_FIELDS,
+    CROP_SPECIES_SCALE_FIELDS,
 )
 
 # Pool ordering shared with tree_model.py's biomass-pool arrays and
@@ -84,6 +85,15 @@ def _ef_bounds(base_value: float, spec) -> Tuple[float, float]:
     return (lo, hi)
 
 
+def _ef_scale_bounds(spec) -> Tuple[float, float]:
+    """Compute a ±95% CI multiplier range, centred on 1, for an emission
+    factor's distribution spread — for EF names applied as a scale rather
+    than a direct substitution (see apply_design_row())."""
+    lo = max(1.0 - _Z_95 * spec.spread_lower, 0.0)
+    hi = 1.0 + _Z_95 * spec.spread_upper
+    return (lo, hi)
+
+
 def default_bounds(
     base_input: dict,
     soil_params: SoilParamsData,
@@ -133,16 +143,18 @@ def default_bounds(
     # all zero (no real inter-annual data — e.g. climate-API path, or a
     # single-year split file), the axis is a harmless no-op rather than a
     # fabricated magnitude.
-    bounds["temp_ci_scale"] = (-1.0, 1.0)
-    bounds["rain_ci_scale"] = (-1.0, 1.0)
-    bounds["evap_ci_scale"] = (-1.0, 1.0)
+    bounds["temp_ci_delta"] = (-1.0, 1.0)
+    bounds["rain_ci_delta"] = (-1.0, 1.0)
+    bounds["evap_ci_delta"] = (-1.0, 1.0)
 
     # --- Emission factors (base ± 95% CI, from relative spread) ---
     ef_specs = MODEL_PARAMETER_DISTRIBUTIONS
-    bounds["ef_burn_crop_N2O"] = _ef_bounds(ef_burn_default["crop_N2O"], ef_specs["ef_burn_crop_N2O"])
-    bounds["ef_burn_crop_CH4"] = _ef_bounds(ef_burn_default["crop_CH4"], ef_specs["ef_burn_crop_CH4"])
-    bounds["ef_burn_tree_N2O"] = _ef_bounds(ef_burn_default["tree_N2O"], ef_specs["ef_burn_tree_N2O"])
-    bounds["ef_burn_tree_CH4"] = _ef_bounds(ef_burn_default["tree_CH4"], ef_specs["ef_burn_tree_CH4"])
+    # ef_burn_*_scale: a multiplier range centred on 1 (not an absolute EF
+    # range) — apply_design_row() applies these as base * x, not a substitution.
+    bounds["ef_burn_crop_N2O_scale"] = _ef_scale_bounds(ef_specs["ef_burn_crop_N2O"])
+    bounds["ef_burn_crop_CH4_scale"] = _ef_scale_bounds(ef_specs["ef_burn_crop_CH4"])
+    bounds["ef_burn_tree_N2O_scale"] = _ef_scale_bounds(ef_specs["ef_burn_tree_N2O"])
+    bounds["ef_burn_tree_CH4_scale"] = _ef_scale_bounds(ef_specs["ef_burn_tree_CH4"])
     bounds["ef_N_inputs"] = _ef_bounds(ef_N_inputs_default, ef_specs["ef_N_inputs"])
     bounds["combustion_factor_crop"] = _ef_bounds(combustion_factor_default["crop"], ef_specs["combustion_factor_crop"])
     bounds["combustion_factor_tree"] = _ef_bounds(combustion_factor_default["tree"], ef_specs["combustion_factor_tree"])
@@ -156,12 +168,11 @@ def default_bounds(
     )
 
     # --- Management: multiplicative scales ---
+    # sf_n/thinning (_delta) and mortality (direct) 
+    # bounds-file-only (see parameter_registry.py).
     for key in (
-        "base_sf_n_scale", "proj_sf_n_scale",
         "base_sf_qty_scale", "proj_sf_qty_scale",
         "base_lit_qty_scale", "proj_lit_qty_scale",
-        "base_thinning_scale", "proj_thinning_scale",
-        "base_mortality_scale", "proj_mortality_scale",
         "base_stand_density_scale", "proj_stand_density_scale",
     ):
         bounds[key] = (0.5, 2.0)
@@ -211,20 +222,30 @@ def apply_design_row(
 ) -> MorrisDesignRowResult:
     """Map one row of the SALib design matrix to SHAMBA typed inputs.
 
+    Every recognised name falls into one of three bound categories, per how
+    its drawn value x is actually applied below (see
+    parameter_registry.py's SCALAR_PARAMETER_NAMES for the full list):
+      direct — x replaces the value outright, no reference to base
+      scale  — multiplier, centred on ~1 (base * x)
+      delta  — additive, centred on ~0 (base + x)
+    A name's suffix always matches its category ("_scale" => scale,
+    "_delta" => delta, bare => direct) with one documented exception: the
+    species-indexed scale fields (TREE_SPECIES_SCALE_FIELDS/
+    CROP_SPECIES_SCALE_FIELDS — e.g. "tree_root_to_shoot_sp2",
+    "crop_slope_sp1"), which can't carry a "_scale" suffix since their name
+    is shared with Monte Carlo's own per-species vocabulary in
+    tree_params.py/crop_params.py. delta is used instead of scale wherever a
+    baseline of 0 should still be able to move (e.g. thinning/mortality
+    fractions, synthetic-fertiliser N, climate) — a multiplier can never
+    lift a zero baseline.
+
     Soil Ceq and iom are recomputed from drawn Cy0, matching SoilParams.create() logic.
-    Climate CI-scales shift each month by that month's own std (clamped to zero
-    from below for rain/evaporation). Thinning and mortality proportions are
-    clamped to [0, 1] after scaling.
+    Climate CI-deltas shift each month by that month's own std (clamped to zero
+    from below for rain/evaporation). Thinning-fraction/mortality-fraction and
+    sf_n proportions are clamped to [0, 1] after the delta is applied.
 
     Species/pool/RothC data is shallow-copied per family, not mutating the
-    base_* arguments in place, mirroring monte_carlo/sampler.py. 
-    Bare parameter names (e.g. "cy0", "tree_wood_dens_sp2", "roth_c_temp_a1")
-    are substitutions: the drawn value becomes the new value of that quantity.
-    "_scale"-suffixed names are multiplicative scale factors applied to every
-    matching base value instead — except "{temp,rain,evap}_ci_scale", which
-    are dimensionless CI-fractions in [-1, 1] applied via each variable's own
-    per-month std rather than as a plain multiplier (see the climate block
-    below).
+    base_* arguments in place, mirroring monte_carlo/sampler.py.
     """
     vals = {param_names[i]: float(x[i]) for i in range(len(param_names))}
 
@@ -250,17 +271,17 @@ def apply_design_row(
     )
 
     # --- Climate ---
-    # temp/rain/evap_ci_scale are dimensionless, in [-1, 1]: at x, each month
+    # temp/rain/evap_ci_delta are dimensionless, in [-1, 1]: at x, each month
     # moves by x * _Z_95 * that month's own std, so the perturbation's shape
     # across the year follows the site's real per-month uncertainty even
     # though there's only one axis per variable.
-    temp_ci_scale = vals.get("temp_ci_scale", 0.0)
-    rain_ci_scale = vals.get("rain_ci_scale", 0.0)
-    evap_ci_scale = vals.get("evap_ci_scale", 0.0)
+    temp_ci_delta = vals.get("temp_ci_delta", 0.0)
+    rain_ci_delta = vals.get("rain_ci_delta", 0.0)
+    evap_ci_delta = vals.get("evap_ci_delta", 0.0)
     climate = ClimateData(
-        temperature=base_climate.temperature + temp_ci_scale * _Z_95 * base_climate.temperature_std,
-        rain=np.clip(base_climate.rain + rain_ci_scale * _Z_95 * base_climate.rain_std, 0.0, None),
-        evaporation=np.clip(base_climate.evaporation + evap_ci_scale * _Z_95 * base_climate.evaporation_std, 0.0, None),
+        temperature=base_climate.temperature + temp_ci_delta * _Z_95 * base_climate.temperature_std,
+        rain=np.clip(base_climate.rain + rain_ci_delta * _Z_95 * base_climate.rain_std, 0.0, None),
+        evaporation=np.clip(base_climate.evaporation + evap_ci_delta * _Z_95 * base_climate.evaporation_std, 0.0, None),
         temperature_std=base_climate.temperature_std,
         rain_std=base_climate.rain_std,
         evaporation_std=base_climate.evaporation_std,
@@ -273,21 +294,24 @@ def apply_design_row(
     vol_org = base_emission_factors.volatile_frac_organic_fertiliser
     vol_syn = base_emission_factors.volatile_frac_synthetic_fertiliser
 
-    _ef_map = {
-        "ef_burn_crop_N2O": ("ef_burn", "crop_N2O"),
-        "ef_burn_crop_CH4": ("ef_burn", "crop_CH4"),
-        "ef_burn_tree_N2O": ("ef_burn", "tree_N2O"),
-        "ef_burn_tree_CH4": ("ef_burn", "tree_CH4"),
-        "combustion_factor_crop": ("combustion_factor", "crop"),
-        "combustion_factor_tree": ("combustion_factor", "tree"),
+    # ef_burn_*_scale: multiplier on the fixed global EF constant, centred on
+    # 1 (base_emission_factors.ef_burn[sub_key] * v). combustion_factor_* is
+    # direct (v replaces the value outright) — the two families are applied
+    # differently despite both being emission factors.
+    _ef_burn_scale_map = {
+        "ef_burn_crop_N2O_scale": "crop_N2O",
+        "ef_burn_crop_CH4_scale": "crop_CH4",
+        "ef_burn_tree_N2O_scale": "tree_N2O",
+        "ef_burn_tree_CH4_scale": "tree_CH4",
     }
-    for name, v in vals.items():
-        if name in _ef_map:
-            container_name, sub_key = _ef_map[name]
-            if container_name == "ef_burn":
-                ef_burn[sub_key] = v
-            else:
-                combustion_factor[sub_key] = v
+    for name, sub_key in _ef_burn_scale_map.items():
+        if name in vals:
+            ef_burn[sub_key] = base_emission_factors.ef_burn[sub_key] * vals[name]
+
+    if "combustion_factor_crop" in vals:
+        combustion_factor["crop"] = vals["combustion_factor_crop"]
+    if "combustion_factor_tree" in vals:
+        combustion_factor["tree"] = vals["combustion_factor_tree"]
 
     if "ef_N_inputs" in vals:
         ef_N_inputs = vals["ef_N_inputs"]
@@ -315,6 +339,12 @@ def apply_design_row(
     )
 
     # --- Tree species: scalars + nitrogen (whole-vector and per-pool element) ---
+    # root_to_shoot is scale (base * v, centred on 1); nitrogen is direct but
+    # whole-vector (one drawn value sets every pool to the same level); every
+    # other field is a plain direct substitution. These fields share their
+    # name/regex with Monte Carlo's own per-species vocabulary (tree_params.py),
+    # so scale treatment is special-cased here rather than via a renamed key —
+    # see TREE_SPECIES_SCALE_FIELDS in parameter_registry.py.
     tree_species_data = {sc: dict(species) for sc, species in base_tree_species_data.items()}
     for name, v in vals.items():
         match = TREE_SPECIES_DIST_KEY_PATTERN.match(name)
@@ -323,6 +353,8 @@ def apply_design_row(
             if field == "nitrogen":
                 # Whole-vector: one drawn value sets every pool to the same level.
                 tree_species_data[sc]["nitrogen"] = np.full(len(_BIOMASS_POOLS), v)
+            elif field in TREE_SPECIES_SCALE_FIELDS:
+                tree_species_data[sc][field] = base_tree_species_data[sc][field] * v
             else:
                 tree_species_data[sc][field] = v
             continue
@@ -334,12 +366,19 @@ def apply_design_row(
             tree_species_data[sc]["nitrogen"] = nitrogen
 
     # --- Crop species: scalars ---
+    # slope/root_to_shoot/nitrogen_above/nitrogen_below are scale (base * v);
+    # the rest (intercept, carbon_below, carbon_above) are direct. Same
+    # shared-vocabulary reasoning as the tree block above — see
+    # CROP_SPECIES_SCALE_FIELDS in parameter_registry.py.
     crop_species_data = {sc: dict(species) for sc, species in base_crop_species_data.items()}
     for name, v in vals.items():
         match = CROP_SPECIES_DIST_KEY_PATTERN.match(name)
         if match:
             field, sc = match.group(1), int(match.group(2))
-            crop_species_data[sc][field] = v
+            if field in CROP_SPECIES_SCALE_FIELDS:
+                crop_species_data[sc][field] = base_crop_species_data[sc][field] * v
+            else:
+                crop_species_data[sc][field] = v
 
     # --- Biomass pool species: turnover/alloc (whole-vector and per-pool element) ---
     pool_species_data = {sc: dict(species) for sc, species in base_pool_species_data.items()}
@@ -358,18 +397,19 @@ def apply_design_row(
                 arr[_BIOMASS_POOL_INDEX[pool]] = v
                 pool_species_data[sc][field] = arr
 
-    # --- Management: synthetic fertiliser N fraction scale (all cohort indices) ---
-    # A multiplicative scale applied to every base_sf_n{i}/ proj_sf_n{i} key present.
-    for scale_key, key_pattern in (
-        ("base_sf_n_scale", r"^base_sf_n\d+$"),
-        ("proj_sf_n_scale", r"^proj_sf_n\d+$"),
+    # --- Management: synthetic fertiliser N fraction delta (all cohort indices) ---
+    # Additive, not multiplicative: a baseline of 0 (no synthetic fertiliser
+    # N) would otherwise be stuck at 0 under any multiplier.
+    for delta_key, key_pattern in (
+        ("base_sf_n_delta", r"^base_sf_n\d+$"),
+        ("proj_sf_n_delta", r"^proj_sf_n\d+$"),
     ):
-        if scale_key in vals:
-            s = vals[scale_key]
+        if delta_key in vals:
+            d = vals[delta_key]
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr * s, 0.0, 1.0)
+                    input_dict[k] = np.clip(base_arr + d, 0.0, 1.0)
 
     # --- Management: quantity scale multipliers (all cohort/event indices) ---
     for scale_key, key_pattern in (
@@ -385,44 +425,57 @@ def apply_design_row(
                     base_arr = np.asarray(base_input[k], dtype=float)
                     input_dict[k] = np.clip(base_arr * s, 0.0, None)
 
-    # --- Management: thinning/mortality REGIME scale multipliers ---
-    # This is the per-cohort thinning/mortality regime.
-    for scale_key, key_pattern in (
-        ("proj_thinning_scale", r"^thin_proj_cohort\d+$"),
-        ("base_thinning_scale", r"^thin_base_cohort\d+$"),
-        ("proj_mortality_scale", r"^mort_proj_cohort\d+$"),
-        ("base_mortality_scale", r"^mort_base_cohort\d+$"),
+    # --- Management: thinning regime delta, mortality regime direct ---
+    # Thinning regime is additive for the same floor-at-zero reason as
+    # sf_n above. Mortality regime is direct: the drawn value replaces every
+    # matching cohort's mortality-event indicator outright, not derived from
+    # base at all.
+    for delta_key, key_pattern in (
+        ("proj_thinning_delta", r"^thin_proj_cohort\d+$"),
+        ("base_thinning_delta", r"^thin_base_cohort\d+$"),
     ):
-        if scale_key in vals:
-            s = vals[scale_key]
+        if delta_key in vals:
+            d = vals[delta_key]
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr * s, 0.0, 1.0)
+                    input_dict[k] = np.clip(base_arr + d, 0.0, 1.0)
 
-    # --- Management: thinning/mortality-fraction-per-pool scale ---
+    for direct_key, key_pattern in (
+        ("proj_mortality", r"^mort_proj_cohort\d+$"),
+        ("base_mortality", r"^mort_base_cohort\d+$"),
+    ):
+        if direct_key in vals:
+            v = vals[direct_key]
+            for k in list(input_dict.keys()):
+                if re.match(key_pattern, k):
+                    base_arr = np.asarray(base_input[k], dtype=float)
+                    input_dict[k] = np.clip(np.full_like(base_arr, v), 0.0, 1.0)
+
+    # --- Management: thinning/mortality-fraction-per-pool delta ---
     # A cohort's effective thinning/mortality pool fraction may come from
     # either the mgmt-input override column or the pool_species_data species
-    # default, depending on the plot — so both sources are scaled together,
+    # default, depending on the plot — so both sources are shifted together,
     # rather than perturbing only one and risking zero effect on plots that
-    # read the other.
+    # read the other. Additive, not multiplicative, for the same
+    # floor-at-zero reason as sf_n/thinning_delta above.
     for field, mgmt_prefix in _FRACTION_MGMT_PREFIX.items():
         for pool in _BIOMASS_POOLS:
-            scale_key = f"{field}_{pool}_scale"
-            if scale_key not in vals:
+            delta_key = f"{field}_{pool}_delta"
+            if delta_key not in vals:
                 continue
-            s = vals[scale_key]
+            d = vals[delta_key]
             token = _POOL_COLUMN_TOKEN[pool]
             key_pattern = rf"^{mgmt_prefix}_(base|proj)_{token}_cohort\d+$"
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr * s, 0.0, 1.0)
+                    input_dict[k] = np.clip(base_arr + d, 0.0, 1.0)
 
             pool_idx = _BIOMASS_POOL_INDEX[pool]
             for sc in pool_species_data:
                 arr = pool_species_data[sc][field].copy()
-                arr[pool_idx] = np.clip(arr[pool_idx] * s, 0.0, 1.0)
+                arr[pool_idx] = np.clip(arr[pool_idx] + d, 0.0, 1.0)
                 pool_species_data[sc][field] = arr
 
     # --- Tree stand density: scale planting density, base/proj independently ---
@@ -439,32 +492,38 @@ def apply_design_row(
                     base_val = np.atleast_1d(np.asarray(base_input[k], dtype=float))
                     input_dict[k] = np.clip(base_val * s, 0.0, None)
 
-    # --- Fire on/off scale ---
-    # Confirmed meaningful: emit.fire_emit() uses the fire array as a genuine
-    # multiplier on burnable biomass, not a boolean gate.
-    for scale_key, data_key in (
-        ("base_fire_on_scale", "fire_on_base"),
-        ("proj_fire_on_scale", "fire_on_proj"),
-        ("base_fire_off_scale", "fire_off_base"),
-        ("proj_fire_off_scale", "fire_off_proj"),
+    # --- Fire on/off: direct ---
+    # emit.fire_emit() uses the fire array as a genuine multiplier on
+    # burnable biomass, not a boolean gate, but the drawn value here still
+    # replaces it outright (every element of what's typically a per-year
+    # array), rather than being derived from the base value.
+    for direct_key, data_key in (
+        ("base_fire_on", "fire_on_base"),
+        ("proj_fire_on", "fire_on_proj"),
+        ("base_fire_off", "fire_off_base"),
+        ("proj_fire_off", "fire_off_proj"),
     ):
-        if scale_key in vals and data_key in input_dict:
+        if direct_key in vals and data_key in input_dict:
             base_arr = np.asarray(base_input[data_key], dtype=float)
-            input_dict[data_key] = np.clip(base_arr * vals[scale_key], 0.0, 1.0)
+            input_dict[data_key] = np.clip(np.full_like(base_arr, vals[direct_key]), 0.0, 1.0)
 
-    # --- Crop yield/residue-left scale (all cohort indices) ---
-    for scale_key, key_pattern, clip_hi in (
-        ("crop_base_yield_scale", r"^crop_base_yd\d+$", None),
-        ("crop_proj_yield_scale", r"^crop_proj_yd\d+$", None),
-        ("crop_base_left_scale", r"^crop_base_left\d+$", 1.0),
-        ("crop_proj_left_scale", r"^crop_proj_left\d+$", 1.0),
+    # --- Crop yield/residue-left delta (all cohort indices) ---
+    # Additive: yield is an absolute per-site/per-crop quantity (kg/ha), not
+    # a fraction, so this shifts it in whatever units the base yield is in
+    # rather than by a percentage. Residue-left is a [0,1] fraction, additive
+    # for the same floor-at-zero reason as the management deltas above.
+    for delta_key, key_pattern, clip_hi in (
+        ("crop_base_yield_delta", r"^crop_base_yd\d+$", None),
+        ("crop_proj_yield_delta", r"^crop_proj_yd\d+$", None),
+        ("crop_base_left_delta", r"^crop_base_left\d+$", 1.0),
+        ("crop_proj_left_delta", r"^crop_proj_left\d+$", 1.0),
     ):
-        if scale_key in vals:
-            s = vals[scale_key]
+        if delta_key in vals:
+            d = vals[delta_key]
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr * s, 0.0, clip_hi)
+                    input_dict[k] = np.clip(base_arr + d, 0.0, clip_hi)
 
     # --- Tree/crop root-in-top-30 (global scalars, no base object to copy) ---
     tree_root_in_top_30 = vals.get("tree_root_in_top_30", TREE_ROOT_IN_TOP_30)

@@ -227,38 +227,38 @@ def main() -> None:
     _qty_dependent = {
         "base_sf_qty_scale": ("base_sf_qty1",),
         "proj_sf_qty_scale": ("proj_sf_qty1",),
-        "base_sf_n_scale": ("base_sf_qty1",),
-        "proj_sf_n_scale": ("proj_sf_qty1",),
+        "base_sf_n_delta": ("base_sf_qty1",),
+        "proj_sf_n_delta": ("proj_sf_qty1",),
         "base_lit_qty_scale": ("base_lit_qty1",),
         "proj_lit_qty_scale": ("proj_lit_qty1",),
         # Emission factors below are shared across base/project (not split
-        # like the scales above), so they're only dead if *neither* side
+        # like the params above), so they're only dead if *neither* side
         # ever applies the relevant input — see emit.py:fert_emit().
         "volatile_frac_organic_fertiliser": ("base_lit_qty1", "proj_lit_qty1"),
         "volatile_frac_synthetic_fertiliser": ("base_sf_qty1", "proj_sf_qty1"),
     }
-    for scale_key, data_keys in _qty_dependent.items():
+    for param_key, data_keys in _qty_dependent.items():
         if not _any_nonzero(*data_keys):
-            bounds_dict.pop(scale_key, None)
+            bounds_dict.pop(param_key, None)
 
     # Fire-related emission factors: dead if fire never occurs. Crop residues
     # can be burned on-farm (fire_on) or off-farm (fire_off via burn_off);
     # trees are only burned on-farm — see emit.py:fire_emit().
     if not _any_nonzero("fire_on_base", "fire_on_proj", "fire_off_base", "fire_off_proj"):
-        bounds_dict.pop("ef_burn_crop_N2O", None)
-        bounds_dict.pop("ef_burn_crop_CH4", None)
+        bounds_dict.pop("ef_burn_crop_N2O_scale", None)
+        bounds_dict.pop("ef_burn_crop_CH4_scale", None)
         bounds_dict.pop("combustion_factor_crop", None)
     if not _any_nonzero("fire_on_base", "fire_on_proj"):
-        bounds_dict.pop("ef_burn_tree_N2O", None)
-        bounds_dict.pop("ef_burn_tree_CH4", None)
+        bounds_dict.pop("ef_burn_tree_N2O_scale", None)
+        bounds_dict.pop("ef_burn_tree_CH4_scale", None)
         bounds_dict.pop("combustion_factor_tree", None)
 
-    # Remove thinning/mortality scales if no non-zero values are present.
-    for scale_key, pattern in (
-        ("proj_thinning_scale", r"^thin_proj_cohort\d+$"),
-        ("base_thinning_scale", r"^thin_base_cohort\d+$"),
-        ("proj_mortality_scale", r"^mort_proj_cohort\d+$"),
-        ("base_mortality_scale", r"^mort_base_cohort\d+$"),
+    # Remove thinning/mortality parameters if no non-zero values are present.
+    for param_key, pattern in (
+        ("proj_thinning_delta", r"^thin_proj_cohort\d+$"),
+        ("base_thinning_delta", r"^thin_base_cohort\d+$"),
+        ("proj_mortality", r"^mort_proj_cohort\d+$"),
+        ("base_mortality", r"^mort_base_cohort\d+$"),
     ):
         matching = [k for k in vector_input_data if re.match(pattern, k)]
         has_nonzero = any(
@@ -266,7 +266,7 @@ def main() -> None:
             for k in matching
         )
         if not has_nonzero:
-            bounds_dict.pop(scale_key, None)
+            bounds_dict.pop(param_key, None)
 
     param_names = list(bounds_dict.keys())
     bounds_list = [bounds_dict[n] for n in param_names]

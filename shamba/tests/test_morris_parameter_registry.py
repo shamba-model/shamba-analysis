@@ -20,7 +20,7 @@ def _species_ctx():
 
 
 @pytest.mark.parametrize("name", [
-    "cy0", "temp_ci_scale",                          # flat scalar
+    "cy0", "temp_ci_delta",                          # flat scalar
     "roth_c_temp_a1",                                # RothC field
     "tree_wood_dens_sp1", "tree_nitrogen_sp1",       # tree scalar / whole-vector
     "tree_nitrogen_leaf_sp1",                        # tree per-element
@@ -35,11 +35,11 @@ def test_accepts_valid_names_across_all_families(name):
 @pytest.mark.parametrize("name, expected_in_reason", [
     ("not_a_real_parameter", None),
     ("tree_biomass_scale", None),                       # replaced by stand_density_scale
-    ("base_sf_n1", None),                                # replaced by sf_n_scale
+    ("base_sf_n1", None),                                # replaced by sf_n_delta
     ("base_cover_scale", None),                          # excluded — cover is an exact on/off flag, not scalable
     ("tree_wood_dens_sp99", "99"),                       # species not present
     ("pool_alloc_branch_sp1", "derived from 'stem'"),    # branch alloc not independent
-    ("pool_thinning_fraction_sp1", "_scale"),            # redirected to the flat scale name
+    ("pool_thinning_fraction_sp1", "_delta"),            # redirected to the flat delta name
 ])
 def test_rejects_invalid_names_with_a_plain_language_reason(name, expected_in_reason):
     reason = unrecognised_reason(name, _species_ctx())

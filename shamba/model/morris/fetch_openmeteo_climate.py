@@ -24,7 +24,7 @@ model/morris/inputs/climate_cover_data/{id}_climate_cover_data.csv
        model/climate.py's from_vectors(); the same function the main model
        uses to derive climate uncertainty from a multi-year split-file input.
        run_morris_direct.py reads these columns back in and uses them to scale
-       the temp_ci_scale/rain_ci_scale/evap_ci_scale parameters. NB. 
+       the temp_ci_delta/rain_ci_delta/evap_ci_delta parameters. NB.
        run_mc_direct.py and shamba_command_line.py build ClimateData from a plain
        (temp, rain, evap) tuple and wouldn't consume these columns.)
 

@@ -55,8 +55,8 @@ BIOMASS_POOL_ELEMENT_DIST_KEY_PATTERN = re.compile(
 # A given cohort's effective value may come from pool_species_data (the species 
 # default) or from the plot's own mgmt-input column, if present,
 # whilst branch/stem are a required mgmt-input column.
-# These two fields are perturbed by scaling every value wherever it's found.
-# See the flat thinning_fraction_{pool}_scale/mortality_fraction_{pool}_scale 
+# These two fields are perturbed by shifting every value wherever it's found.
+# See the flat thinning_fraction_{pool}_delta/mortality_fraction_{pool}_delta
 # names in SCALAR_PARAMETER_NAMES below, applied in apply_design_row().
 _POOL_FIELD_ALLOWED_ELEMENT_POOLS: Dict[str, FrozenSet[str]] = {
     "turnover": frozenset(_BIOMASS_POOLS),
@@ -73,46 +73,81 @@ _POOL_FIELDS_REDIRECTED_TO_SCALE = frozenset({"thinning_fraction", "mortality_fr
 
 # ---------------------------------------------------------------------------
 # Flat scalar parameter names — no species/pool indexing.
+#
+# Bound categories, per how apply_design_row() actually applies the drawn
+# value x. Three categories:
+#   direct — x becomes the new value outright, no reference to base
+#   scale  — multiplier, centred on ~1 (base * x)
+#   delta  — additive, centred on ~0 (base + x)
+# A name's own suffix (_scale/_delta) always matches its real category here —
+# the only exceptions are the species-indexed scale fields (see
+# TREE_SPECIES_SCALE_FIELDS/CROP_SPECIES_SCALE_FIELDS below), which can't
+# carry a suffix at all since their name is shared with Monte Carlo's own
+# per-species vocabulary.
 # ---------------------------------------------------------------------------
 SCALAR_PARAMETER_NAMES: FrozenSet[str] = frozenset({ ##
-    # Soil
+    # Soil — direct
     "cy0", "clay",
-    # Climate: dimensionless CI-fraction in [-1, 1]. At x, month m moves by
-    # x * 1.96 * that month's own std (see apply_design_row()) — one axis per
-    # variable, but the per-month magnitude still reflects real site data.
-    "temp_ci_scale", "rain_ci_scale", "evap_ci_scale",
-    # Emission factors
-    "ef_burn_crop_N2O", "ef_burn_crop_CH4",
-    "ef_burn_tree_N2O", "ef_burn_tree_CH4",
+    # Climate — delta. Dimensionless CI-fraction in [-1, 1]. At x, month m
+    # moves by x * 1.96 * that month's own std — one axis per variable, but
+    # the per-month magnitude still reflects real site data.
+    "temp_ci_delta", "rain_ci_delta", "evap_ci_delta",
+    # Emission factors — scale for the burn EFs (multiplier on the fixed
+    # global constant, centred on 1); direct for the rest.
+    "ef_burn_crop_N2O_scale", "ef_burn_crop_CH4_scale",
+    "ef_burn_tree_N2O_scale", "ef_burn_tree_CH4_scale",
     "ef_N_inputs",
     "combustion_factor_crop", "combustion_factor_tree",
     "volatile_frac_organic_fertiliser", "volatile_frac_synthetic_fertiliser",
-    # Management: multiplicative scales
-    "base_sf_n_scale", "proj_sf_n_scale",
+    # Management — scale (base * x, centred on 1)
     "base_sf_qty_scale", "proj_sf_qty_scale",
     "base_lit_qty_scale", "proj_lit_qty_scale",
-    "base_thinning_scale", "proj_thinning_scale",
-    "base_mortality_scale", "proj_mortality_scale",
     "base_stand_density_scale", "proj_stand_density_scale",
-    "base_fire_on_scale", "proj_fire_on_scale",
-    "base_fire_off_scale", "proj_fire_off_scale",
-    "crop_base_yield_scale", "crop_proj_yield_scale",
-    "crop_base_left_scale", "crop_proj_left_scale",
-    # Thinning/mortality pool-allocation fractions: one scale per pool,
-    # shared across base and proj. Scales the effective value wherever it's
+    # Management — delta (base + x, centred on 0). These are all [0,1]-clamped
+    "base_sf_n_delta", "proj_sf_n_delta",
+    "base_thinning_delta", "proj_thinning_delta",
+    # Management — direct (x replaces every matching value outright)
+    "base_mortality", "proj_mortality",
+    "base_fire_on", "proj_fire_on",
+    "base_fire_off", "proj_fire_off",
+    # Crop yield/residue-left — delta. Yield is an absolute per-site/per-crop
+    # quantity (kg/ha), not a fraction, so this is additive in whatever units
+    # the base yield is in rather than a percentage; residue-left is a [0,1]
+    # fraction, additive for the same floor-at-zero reason as the pool
+    # fractions below.
+    "crop_base_yield_delta", "crop_proj_yield_delta",
+    "crop_base_left_delta", "crop_proj_left_delta",
+    # Thinning/mortality pool-allocation fractions: one delta per pool,
+    # shared across base and proj. Shifts the effective value wherever it's
     # found — the plot's own mgmt-input override column if present, and/or
     # the pool_species_data species default — so it has an effect regardless
-    # of which source a given cohort actually reads from. See
-    # apply_design_row() and _POOL_FIELDS_REDIRECTED_TO_SCALE above.
-    "thinning_fraction_leaf_scale", "thinning_fraction_branch_scale",
-    "thinning_fraction_stem_scale", "thinning_fraction_croot_scale",
-    "thinning_fraction_froot_scale",
-    "mortality_fraction_leaf_scale", "mortality_fraction_branch_scale",
-    "mortality_fraction_stem_scale", "mortality_fraction_croot_scale",
-    "mortality_fraction_froot_scale",
+    # of which source a given cohort actually reads from, and (being
+    # additive rather than multiplicative) can turn on a fraction that was
+    # zero at baseline. See apply_design_row() and
+    # _POOL_FIELDS_REDIRECTED_TO_SCALE above.
+    "thinning_fraction_leaf_delta", "thinning_fraction_branch_delta",
+    "thinning_fraction_stem_delta", "thinning_fraction_croot_delta",
+    "thinning_fraction_froot_delta",
+    "mortality_fraction_leaf_delta", "mortality_fraction_branch_delta",
+    "mortality_fraction_stem_delta", "mortality_fraction_croot_delta",
+    "mortality_fraction_froot_delta",
     # Global scalars with a real injection point — see parameter_space.py's
     # apply_design_row() and tree_model.py/crop_model.py's get_inputs().
     "tree_root_in_top_30", "crop_root_in_top_30",
+})
+
+# Species-indexed fields treated as "scale" (base * x, centred on 1) rather
+# than the shared-vocabulary default of "direct". These names are NOT
+# renamed with a "_scale" suffix — they're matched via
+# TREE_SPECIES_DIST_KEY_PATTERN/CROP_SPECIES_DIST_KEY_PATTERN, imported
+# directly from tree_params.py/crop_params.py and shared with Monte Carlo's
+# own per-species vocabulary, so the name itself can't change without
+# touching that shared field list. apply_design_row() special-cases these
+# fields within the existing match block instead — the same approach already
+# used there for "nitrogen" (whole-vector vs. per-pool).
+TREE_SPECIES_SCALE_FIELDS: FrozenSet[str] = frozenset({"root_to_shoot"})
+CROP_SPECIES_SCALE_FIELDS: FrozenSet[str] = frozenset({
+    "slope", "root_to_shoot", "nitrogen_above", "nitrogen_below",
 })
 
 
@@ -159,7 +194,7 @@ def unrecognised_reason(
     match = BIOMASS_POOL_DIST_KEY_PATTERN.match(name)
     if match:
         # Whole-vector. thinning_fraction/mortality_fraction are redirected
-        # to the flat scale parameters instead (see
+        # to the flat delta parameters instead (see
         # _POOL_FIELDS_REDIRECTED_TO_SCALE); turnover/alloc are recognised
         # for every pool here (the branch/croot-derived-alloc caveat only
         # applies to the per-element pattern below, since a whole-vector
@@ -170,8 +205,8 @@ def unrecognised_reason(
                 f"'{name}': {field} can't be perturbed via species data alone — "
                 f"a cohort's effective {field} may instead come from the plot's "
                 f"own mgmt-input override column, which this name wouldn't touch. "
-                f"Use '{field}_{{pool}}_scale' instead (e.g. '{field}_leaf_scale'), "
-                f"which scales the effective value wherever it's actually sourced "
+                f"Use '{field}_{{pool}}_delta' instead (e.g. '{field}_leaf_delta'), "
+                f"which shifts the effective value wherever it's actually sourced "
                 f"from (mgmt-input override or species default)."
             )
         if sc not in species_ctx.pool_species_data:
@@ -189,7 +224,7 @@ def unrecognised_reason(
                 f"'{name}': {field} can't be perturbed via species data alone — "
                 f"a cohort's effective {field} may instead come from the plot's "
                 f"own mgmt-input override column, which this name wouldn't touch. "
-                f"Use '{field}_{pool}_scale' instead, which scales the effective "
+                f"Use '{field}_{pool}_delta' instead, which shifts the effective "
                 f"value wherever it's actually sourced from (mgmt-input override "
                 f"or species default)."
             )
