@@ -575,3 +575,41 @@ def test_from_defaults_derives_branch_alloc_after_species_param_sampling():
     assert saw_perturbed_stem, (
         "Expected pool_alloc_sp sampling to actually perturb stem across samples"
     )
+
+
+def test_from_defaults_tree_root_in_top_30_overrides_below_ground_only():
+    """No override matches CONSTANTS.TREE_ROOT_IN_TOP_30 exactly (the default
+    preserves current behavior); an explicit override scales only the
+    below-ground output, leaving above-ground untouched."""
+    import model.common.constants as CONSTANTS
+
+    tree_par, growth, no_of_years, stand_density = _wl_tree_par_and_growth()
+    pool_species_data = TreeModel.load_biomass_pool_species_data()
+
+    default_tree = TreeModel.from_defaults(
+        tree_params=tree_par, tree_growth=growth, no_of_years=no_of_years,
+        stand_density=stand_density, pool_species_data=pool_species_data,
+    )
+    explicit_default_tree = TreeModel.from_defaults(
+        tree_params=tree_par, tree_growth=growth, no_of_years=no_of_years,
+        stand_density=stand_density, pool_species_data=pool_species_data,
+        tree_root_in_top_30=CONSTANTS.TREE_ROOT_IN_TOP_30,
+    )
+    np.testing.assert_array_equal(
+        default_tree.output["below"]["carbon"], explicit_default_tree.output["below"]["carbon"]
+    )
+
+    overridden_value = 0.5
+    overridden_tree = TreeModel.from_defaults(
+        tree_params=tree_par, tree_growth=growth, no_of_years=no_of_years,
+        stand_density=stand_density, pool_species_data=pool_species_data,
+        tree_root_in_top_30=overridden_value,
+    )
+    np.testing.assert_array_equal(
+        default_tree.output["above"]["carbon"], overridden_tree.output["above"]["carbon"]
+    )
+    ratio = overridden_value / CONSTANTS.TREE_ROOT_IN_TOP_30
+    np.testing.assert_allclose(
+        overridden_tree.output["below"]["carbon"],
+        np.array(default_tree.output["below"]["carbon"]) * ratio,
+    )

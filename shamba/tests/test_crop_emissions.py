@@ -3,8 +3,8 @@ import model.emit as Emit
 import numpy as np
 import pytest
 from model import configuration
-from model.crop_model import get_crop_bases, get_crop_projects
-from model.crop_params import load_crop_species_data
+from model.crop_model import get_crop_bases, get_crop_projects, create as create_crop_model
+from model.crop_params import load_crop_species_data, CropParamsData
 from model.common.data_handler import expand_single_row_data_input
 
 #-- Expected emissions arrays -- #
@@ -104,4 +104,41 @@ def test_crop_model(csv_input_file, expected_base_emissions, expected_project_em
     )
     assert crop_project_emissions == pytest.approx(
         expected_project_emissions, rel=1e-4
+    )
+
+
+def test_create_crop_root_in_top_30_overrides_below_ground_only():
+    """No override matches CONSTANTS.CROP_ROOT_IN_TOP_30 exactly (the default
+    preserves current behavior); an explicit override scales only the
+    below-ground output, leaving above-ground untouched."""
+    import model.common.constants as CONSTANTS
+
+    crop_params = CropParamsData(
+        species="TestCrop", species_code=1, slope=1.0, intercept=0.5,
+        nitrogen_below=0.01, nitrogen_above=0.02,
+        carbon_below=0.40, carbon_above=0.45, root_to_shoot=0.20,
+    )
+    crop_yield = np.array([5.0, 6.0, 7.0])
+
+    default_crop = create_crop_model(crop_params, no_of_years=3, crop_yield=crop_yield, left_in_field=0.5)
+    explicit_default_crop = create_crop_model(
+        crop_params, no_of_years=3, crop_yield=crop_yield, left_in_field=0.5,
+        crop_root_in_top_30=CONSTANTS.CROP_ROOT_IN_TOP_30,
+    )
+    np.testing.assert_array_equal(
+        default_crop.output["below"]["carbon"], explicit_default_crop.output["below"]["carbon"]
+    )
+
+    overridden_value = 0.5
+    overridden_crop = create_crop_model(
+        crop_params, no_of_years=3, crop_yield=crop_yield, left_in_field=0.5,
+        crop_root_in_top_30=overridden_value,
+    )
+    np.testing.assert_array_equal(
+        default_crop.output["above"]["carbon"], overridden_crop.output["above"]["carbon"]
+    )
+    ratio = overridden_value / CONSTANTS.CROP_ROOT_IN_TOP_30
+    np.testing.assert_allclose(
+        overridden_crop.output["below"]["carbon"],
+        np.array(default_crop.output["below"]["carbon"]) * ratio,
     )
