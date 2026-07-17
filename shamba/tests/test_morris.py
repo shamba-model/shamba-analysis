@@ -12,6 +12,7 @@ from model.soil_params import SoilParamsData
 from model.climate import ClimateData
 from model.emit import EmissionFactors
 from model.soil_models.soil_model_params import RothCParams
+from model.morris.parameter_registry import MorrisSpeciesContext
 from model.common.calculate_emissions import handle_intervention
 from model.morris.parameter_space import (
     apply_design_row,
@@ -105,6 +106,14 @@ def _make_pool_species_data():
             "mortality_fraction": np.array([0.5, 0.5, 0.5, 0.5, 0.5]),
         },
     }
+
+
+def _make_species_ctx():
+    return MorrisSpeciesContext(
+        tree_species_data=_make_tree_species_data(),
+        crop_species_data=_make_crop_species_data(),
+        pool_species_data=_make_pool_species_data(),
+    )
 
 
 def _apply(x, param_names, base_input=None, base_soil=None, base_climate=None,
@@ -410,12 +419,12 @@ def test_default_bounds_soil_bounds():
     z_95, z_90_half = 1.96, 1.645
 
     soil = _make_soil(cy0=50.0, cy0_q05=35.0, cy0_q95=65.0, clay=30.0, clay_q05=15.0, clay_q95=50.0)
-    bounds = default_bounds(_make_base_input(), soil)
+    bounds = default_bounds(_make_base_input(), soil, _make_species_ctx())
     cy0_sigma = (65.0 - 35.0) / (2.0 * z_90_half)
     assert bounds["cy0"] == pytest.approx((50.0 - z_95 * cy0_sigma, 50.0 + z_95 * cy0_sigma))
 
     soil = _make_soil(cy0=50.0, cy0_q05=50.0, cy0_q95=50.0, clay=30.0, clay_q05=30.0, clay_q95=30.0)
-    bounds = default_bounds(_make_base_input(), soil)
+    bounds = default_bounds(_make_base_input(), soil, _make_species_ctx())
     assert bounds["cy0"] == (40.0, 60.0)
     assert bounds["clay"] == (5.0, 70.0)
 
@@ -424,7 +433,7 @@ def test_default_bounds_does_not_emit_removed_legacy_names():
     """tree_biomass_scale and base_sf_n1/proj_sf_n1 are no longer recognised by
     apply_design_row() (replaced by stand_density_scale and sf_n_scale) — the
     default set must not emit them, or they'd sample with zero effect."""
-    bounds = default_bounds(_make_base_input(), _make_soil())
+    bounds = default_bounds(_make_base_input(), _make_soil(), _make_species_ctx())
 
     assert "tree_biomass_scale" not in bounds
     assert "base_sf_n1" not in bounds

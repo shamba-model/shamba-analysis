@@ -21,6 +21,7 @@ from model.tree_params import TREE_SPECIES_DIST_KEY_PATTERN
 from model.crop_params import CROP_SPECIES_DIST_KEY_PATTERN
 from model.tree_model import BIOMASS_POOL_DIST_KEY_PATTERN
 from model.morris.parameter_registry import (
+    MorrisSpeciesContext,
     TREE_SPECIES_ELEMENT_DIST_KEY_PATTERN,
     BIOMASS_POOL_ELEMENT_DIST_KEY_PATTERN,
 )
@@ -86,12 +87,17 @@ def _ef_bounds(base_value: float, spec) -> Tuple[float, float]:
 def default_bounds(
     base_input: dict,
     soil_params: SoilParamsData,
+    species_ctx: MorrisSpeciesContext,
 ) -> Dict[str, Tuple[float, float]]:
     """Compute default parameter bounds for Morris screening.
-    Returns a dict mapping parameter name → (min, max).
+
+    Returns a dict mapping parameter name → (min, max). --bounds-file
+    overrides merge into this dict, so every key returned here is a real,
+    functioning default that gets screened whenever --bounds-file doesn't
+    override it.
+
     WARNING: these bounds are currently a mix of illustrative and 
     intended to be used. Tidy this up once Morris design final.
-
     """
     bounds: Dict[str, Tuple[float, float]] = {}
 
@@ -155,6 +161,17 @@ def default_bounds(
         "base_stand_density_scale", "proj_stand_density_scale",
     ):
         bounds[key] = (0.5, 2.0)
+
+    # --- Species/pool families: not auto-bounded, one example only ---
+    # RothC/tree/crop/pool fields are recognised by apply_design_row() but have
+    # no real default range here yet — real coverage of these families is still
+    # TODO. This single example (±20% around the first available tree species'
+    # wood_dens) exists only to show the naming convention when no --bounds-file
+    # is given; it is not a placeholder for the rest of the family.
+    if species_ctx.tree_species_data:
+        sc = min(species_ctx.tree_species_data)
+        wood_dens = species_ctx.tree_species_data[sc]["wood_dens"]
+        bounds[f"tree_wood_dens_sp{sc}"] = (wood_dens * 0.8, wood_dens * 1.2)
 
     return bounds
 

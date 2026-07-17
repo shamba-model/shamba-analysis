@@ -177,7 +177,7 @@ def main() -> None:
     )
 
     # --- Build parameter bounds ---
-    bounds_dict = default_bounds(vector_input_data, soil_params)
+    bounds_dict = default_bounds(vector_input_data, soil_params, species_ctx)
 
     if args.bounds_file is not None:
         overrides = load_bounds_override(args.bounds_file)
