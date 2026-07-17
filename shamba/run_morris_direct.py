@@ -168,6 +168,16 @@ def main() -> None:
         use_climate_api=use_climate_api,
         climate_vectors=climate_vectors,
     )
+    # from_location()/from_vectors() only ever see a plain (temp, rain, evap)
+    # tuple, so they recompute std from that (always zero for a tiled 12-row
+    # split file). If the site's climate_cover_data.csv carries its own real
+    # temp_std/rain_std/evap_std, use those: they're already monthly 
+    # climatology (12 values, tiled to 12*n_years by the reader above), 
+    # so the first 12 elements are enough.
+    if "temp_std" in vector_input_data:
+        climate.temperature_std = np.asarray(vector_input_data["temp_std"][:12])
+        climate.rain_std = np.asarray(vector_input_data["rain_std"][:12])
+        climate.evaporation_std = np.asarray(vector_input_data["evap_std"][:12])
     plot_id = vector_input_data.get("plot_name", None)
     soil_params = SoilParams.get_soil_params(
         location=location,

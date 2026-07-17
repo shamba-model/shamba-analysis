@@ -20,7 +20,7 @@ def _species_ctx():
 
 
 @pytest.mark.parametrize("name", [
-    "cy0", "temp_delta",                            # flat scalar
+    "cy0", "temp_ci_scale",                          # flat scalar
     "roth_c_temp_a1",                                # RothC field
     "tree_wood_dens_sp1", "tree_nitrogen_sp1",       # tree scalar / whole-vector
     "tree_nitrogen_leaf_sp1",                        # tree per-element

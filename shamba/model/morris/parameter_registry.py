@@ -77,8 +77,10 @@ _POOL_FIELDS_REDIRECTED_TO_SCALE = frozenset({"thinning_fraction", "mortality_fr
 SCALAR_PARAMETER_NAMES: FrozenSet[str] = frozenset({ ##
     # Soil
     "cy0", "clay",
-    # Climate
-    "temp_delta", "rain_scale", "evap_scale",
+    # Climate: dimensionless CI-fraction in [-1, 1]. At x, month m moves by
+    # x * 1.96 * that month's own std (see apply_design_row()) — one axis per
+    # variable, but the per-month magnitude still reflects real site data.
+    "temp_ci_scale", "rain_ci_scale", "evap_ci_scale",
     # Emission factors
     "ef_burn_crop_N2O", "ef_burn_crop_CH4",
     "ef_burn_tree_N2O", "ef_burn_tree_CH4",

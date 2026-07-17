@@ -37,14 +37,14 @@ def _make_soil(cy0=50.0, clay=30.0, cy0_q05=40.0, cy0_q95=65.0,
     )
 
 
-def _make_climate() -> ClimateData:
+def _make_climate(temperature_std=None, rain_std=None, evaporation_std=None) -> ClimateData:
     return ClimateData(
         temperature=np.full(12, 20.0),
         rain=np.full(12, 80.0),
         evaporation=np.full(12, 50.0),
-        temperature_std=np.zeros(12),
-        rain_std=np.zeros(12),
-        evaporation_std=np.zeros(12),
+        temperature_std=np.zeros(12) if temperature_std is None else temperature_std,
+        rain_std=np.zeros(12) if rain_std is None else rain_std,
+        evaporation_std=np.zeros(12) if evaporation_std is None else evaporation_std,
     )
 
 
@@ -154,15 +154,18 @@ def test_apply_design_row_soil_recomputes_ceq_iom():
 
 
 def test_apply_design_row_climate_perturbations():
-    """temp_delta shifts all 12 months additively; rain_scale multiplies and
-    clamps to zero (never negative)."""
-    base_climate = _make_climate()
+    """temp_ci_scale/rain_ci_scale shift each month by x * 1.96 * that month's
+    own std — a site with zero std is an unaffected no-op, and rain is clamped
+    to zero from below (never negative)."""
+    z_95 = 1.96
+    temp_std = np.linspace(0.5, 2.0, 12)
+    base_climate = _make_climate(temperature_std=temp_std)
 
-    result = _apply(x=[1.5], param_names=["temp_delta"], base_climate=base_climate)
-    np.testing.assert_allclose(result.climate.temperature, base_climate.temperature + 1.5)
-    np.testing.assert_array_equal(result.climate.rain, base_climate.rain)
+    result = _apply(x=[0.5], param_names=["temp_ci_scale"], base_climate=base_climate)
+    np.testing.assert_allclose(result.climate.temperature, base_climate.temperature + 0.5 * z_95 * temp_std)
+    np.testing.assert_array_equal(result.climate.rain, base_climate.rain)  # rain_ci_scale unset, std zero
 
-    result = _apply(x=[-0.1], param_names=["rain_scale"], base_climate=base_climate)
+    result = _apply(x=[-100.0], param_names=["rain_ci_scale"], base_climate=_make_climate(rain_std=np.full(12, 1.0)))
     assert np.all(result.climate.rain == 0.0)
 
 
@@ -316,7 +319,7 @@ def test_run_morris_returns_correct_shape():
     fake_result.emit_base_emissions = np.full(N_YEARS, 4.0)
 
     X = np.zeros((n_rows, k))
-    param_names = ["cy0", "clay", "temp_delta"]
+    param_names = ["cy0", "clay", "temp_ci_scale"]
 
     # create_autospec (not a bare MagicMock) so a call missing a required
     # handle_intervention() kwarg raises TypeError here, instead of silently
@@ -427,6 +430,16 @@ def test_default_bounds_soil_bounds():
     bounds = default_bounds(_make_base_input(), soil, _make_species_ctx())
     assert bounds["cy0"] == (40.0, 60.0)
     assert bounds["clay"] == (5.0, 70.0)
+
+
+def test_default_bounds_climate_bounds():
+    """Climate bounds are a fixed (-1, 1) CI-fraction range, independent of the
+    site's actual std values — apply_design_row() is what applies the real
+    per-month magnitude, not the bound itself."""
+    bounds = default_bounds(_make_base_input(), _make_soil(), _make_species_ctx())
+    assert bounds["temp_ci_scale"] == (-1.0, 1.0)
+    assert bounds["rain_ci_scale"] == (-1.0, 1.0)
+    assert bounds["evap_ci_scale"] == (-1.0, 1.0)
 
 
 def test_default_bounds_does_not_emit_removed_legacy_names():

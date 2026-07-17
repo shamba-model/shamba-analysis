@@ -127,11 +127,15 @@ def default_bounds(
         bounds["clay"] = (5.0, 70.0)
 
     # --- Climate ---
-    # ASSUMPTION: use a default range for climate perturbations:
-    # ±2°C for temperature, ±50% for rain and evaporation.
-    bounds["temp_delta"] = (-2.0, 2.0)
-    bounds["rain_scale"] = (0.5, 1.5)
-    bounds["evap_scale"] = (0.5, 1.5)
+    # Dimensionless CI-fraction, independent of any site's actual std values —
+    # apply_design_row() scales each month by its own real std at x=±1, so the
+    # bound itself never needs to know what those stds are. If a site's std is
+    # all zero (no real inter-annual data — e.g. climate-API path, or a
+    # single-year split file), the axis is a harmless no-op rather than a
+    # fabricated magnitude.
+    bounds["temp_ci_scale"] = (-1.0, 1.0)
+    bounds["rain_ci_scale"] = (-1.0, 1.0)
+    bounds["evap_ci_scale"] = (-1.0, 1.0)
 
     # --- Emission factors (base ± 95% CI, from relative spread) ---
     ef_specs = MODEL_PARAMETER_DISTRIBUTIONS
@@ -208,15 +212,19 @@ def apply_design_row(
     """Map one row of the SALib design matrix to SHAMBA typed inputs.
 
     Soil Ceq and iom are recomputed from drawn Cy0, matching SoilParams.create() logic.
-    Rain and evaporation scales are clamped to zero from below. Thinning and
-    mortality proportions are clamped to [0, 1] after scaling.
+    Climate CI-scales shift each month by that month's own std (clamped to zero
+    from below for rain/evaporation). Thinning and mortality proportions are
+    clamped to [0, 1] after scaling.
 
     Species/pool/RothC data is shallow-copied per family, not mutating the
     base_* arguments in place, mirroring monte_carlo/sampler.py. 
-    Bare parameter names (e.g. "cy0", "tree_wood_dens_sp2", "roth_c_temp_a1") 
+    Bare parameter names (e.g. "cy0", "tree_wood_dens_sp2", "roth_c_temp_a1")
     are substitutions: the drawn value becomes the new value of that quantity.
     "_scale"-suffixed names are multiplicative scale factors applied to every
-    matching base value instead.
+    matching base value instead — except "{temp,rain,evap}_ci_scale", which
+    are dimensionless CI-fractions in [-1, 1] applied via each variable's own
+    per-month std rather than as a plain multiplier (see the climate block
+    below).
     """
     vals = {param_names[i]: float(x[i]) for i in range(len(param_names))}
 
@@ -242,13 +250,17 @@ def apply_design_row(
     )
 
     # --- Climate ---
-    temp_delta = vals.get("temp_delta", 0.0)
-    rain_scale = vals.get("rain_scale", 1.0)
-    evap_scale = vals.get("evap_scale", 1.0)
+    # temp/rain/evap_ci_scale are dimensionless, in [-1, 1]: at x, each month
+    # moves by x * _Z_95 * that month's own std, so the perturbation's shape
+    # across the year follows the site's real per-month uncertainty even
+    # though there's only one axis per variable.
+    temp_ci_scale = vals.get("temp_ci_scale", 0.0)
+    rain_ci_scale = vals.get("rain_ci_scale", 0.0)
+    evap_ci_scale = vals.get("evap_ci_scale", 0.0)
     climate = ClimateData(
-        temperature=base_climate.temperature + temp_delta,
-        rain=np.clip(base_climate.rain * rain_scale, 0.0, None),
-        evaporation=np.clip(base_climate.evaporation * evap_scale, 0.0, None),
+        temperature=base_climate.temperature + temp_ci_scale * _Z_95 * base_climate.temperature_std,
+        rain=np.clip(base_climate.rain + rain_ci_scale * _Z_95 * base_climate.rain_std, 0.0, None),
+        evaporation=np.clip(base_climate.evaporation + evap_ci_scale * _Z_95 * base_climate.evaporation_std, 0.0, None),
         temperature_std=base_climate.temperature_std,
         rain_std=base_climate.rain_std,
         evaporation_std=base_climate.evaporation_std,
