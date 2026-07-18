@@ -88,6 +88,16 @@ _POOL_FIELDS_REDIRECTED_TO_SCALE = frozenset({"thinning_fraction", "mortality_fr
 SCALAR_PARAMETER_NAMES: FrozenSet[str] = frozenset({ ##
     # Soil — direct
     "cy0", "clay",
+    # Soil — direct. Ceq = cy0_to_ceq_multiplier * cy0 (default 1.25, the
+    # same literal SoilParams.create()/monte_carlo/sampler.py use — see
+    # apply_design_row(), which recomputes Ceq/iom from drawn cy0 already).
+    # Morris-local only: does not touch soil_params.py or sampler.py.
+    "cy0_to_ceq_multiplier",
+    # Litter — direct. The carbon/nitrogen-content fractions applied to
+    # every external litter addition (LitterModel.from_defaults()); does not
+    # affect synthetic fertiliser, which hardcodes carbon=0 and sources
+    # nitrogen from its own per-cohort mgmt-input vector instead.
+    "litter_carbon", "litter_nitrogen",
     # Climate — delta. Dimensionless CI-fraction in [-1, 1]. At x, month m
     # moves by x * 1.96 * that month's own std — one axis per variable, but
     # the per-month magnitude still reflects real site data.
@@ -110,6 +120,15 @@ SCALAR_PARAMETER_NAMES: FrozenSet[str] = frozenset({ ##
     "base_mortality", "proj_mortality",
     "base_fire_on", "proj_fire_on",
     "base_fire_off", "proj_fire_off",
+    # Soil cover — direct, applied as a fraction of the year covered:
+    # RothC's cover_year == 1 test (roth_c.py's get_rmf()/get_acc_tsmd()) is
+    # an exact-equality check against the integer 1, not a continuous
+    # multiplier like fire's array (see emit.fire_emit()) — cover is a
+    # per-month "crop present"/bare flag, not a scalable magnitude. So
+    # apply_design_row() sets round(x * 12) of the 12 calendar months to
+    # covered (still a real 0/1 each) rather than assigning the drawn value
+    # itself to every month.
+    "base_cover", "proj_cover",
     # Crop yield/residue-left — delta. Yield is an absolute per-site/per-crop
     # quantity (kg/ha), not a fraction, so this is additive in whatever units
     # the base yield is in rather than a percentage; residue-left is a [0,1]

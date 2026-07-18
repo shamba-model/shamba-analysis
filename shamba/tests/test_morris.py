@@ -352,6 +352,58 @@ def test_apply_design_row_fire_on_off_direct_replaces_array_and_clamps():
     np.testing.assert_allclose(result.input_dict["fire_off_base"], [0.3, 0.3])
 
 
+def test_apply_design_row_cy0_to_ceq_multiplier_overrides_default():
+    """cy0_to_ceq_multiplier defaults to 1.25 (matching SoilParams.create())
+    when not drawn, and reflects the drawn value when it is — Ceq/iom are
+    still recomputed from it exactly as for the untouched default."""
+    base_soil = _make_soil(cy0=50.0)
+
+    default_result = _apply(x=[70.0], param_names=["cy0"], base_soil=base_soil)
+    assert default_result.soil.Ceq == pytest.approx(1.25 * 70.0)
+
+    result = _apply(
+        x=[70.0, 1.5], param_names=["cy0", "cy0_to_ceq_multiplier"], base_soil=base_soil,
+    )
+    expected_ceq = 1.5 * 70.0
+    assert result.soil.Ceq == pytest.approx(expected_ceq)
+    assert result.soil.iom == pytest.approx(0.049 * expected_ceq ** 1.139)
+
+
+def test_apply_design_row_litter_carbon_nitrogen_override_constants():
+    """litter_carbon/litter_nitrogen default to CONSTANTS.ORGANIC_INPUT_C/N
+    when not drawn, and reflect the drawn value when they are."""
+    import model.common.constants as CONSTANTS
+
+    default_result = _apply(x=[50.0], param_names=["cy0"])
+    assert default_result.litter_carbon == CONSTANTS.ORGANIC_INPUT_C
+    assert default_result.litter_nitrogen == CONSTANTS.ORGANIC_INPUT_N
+
+    result = _apply(x=[0.4, 0.03], param_names=["litter_carbon", "litter_nitrogen"])
+    assert result.litter_carbon == pytest.approx(0.4)
+    assert result.litter_nitrogen == pytest.approx(0.03)
+
+
+def test_apply_design_row_soil_cover_sets_fraction_of_months_covered():
+    """base_cover/proj_cover set round(x * 12) of the 12 calendar months to
+    covered (still an exact 0/1 each, as RothC's cover_year == 1 test
+    requires), tiled across however many years the base array spans —
+    rather than assigning the drawn value itself to every element."""
+    base_input = {
+        "base_cover": np.ones(24),   # 2 years, 12 months each
+        "proj_cover": np.ones(24),
+    }
+
+    result = _apply(x=[0.25, 1.0], param_names=["base_cover", "proj_cover"], base_input=base_input)
+
+    expected_base_year = np.array([1.0] * 3 + [0.0] * 9)  # round(0.25*12) = 3 months covered
+    np.testing.assert_allclose(result.input_dict["base_cover"], np.tile(expected_base_year, 2))
+    np.testing.assert_allclose(result.input_dict["proj_cover"], np.ones(24))  # x=1.0 -> all 12 months
+
+    # x=0.0 -> no months covered
+    result = _apply(x=[0.0], param_names=["base_cover"], base_input=base_input)
+    np.testing.assert_allclose(result.input_dict["base_cover"], np.zeros(24))
+
+
 def test_apply_design_row_tree_root_in_top_30_overrides_constant():
     """tree_root_in_top_30/crop_root_in_top_30 default to the CONSTANTS values
     when not drawn, and reflect the drawn value when they are."""

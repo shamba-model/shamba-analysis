@@ -65,6 +65,8 @@ def _run_single_morris(args: _MorrisSampleArgs) -> np.ndarray:
         soil_model_params=design.soil_model_params,
         tree_root_in_top_30=design.tree_root_in_top_30,
         crop_root_in_top_30=design.crop_root_in_top_30,
+        litter_carbon=design.litter_carbon,
+        litter_nitrogen=design.litter_nitrogen,
     )
     base_emissions = result.emit_base_emissions
     project_emissions = result.emit_project_emissions

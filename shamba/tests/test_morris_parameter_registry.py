@@ -27,6 +27,9 @@ def _species_ctx():
     "crop_slope_sp2",                                # crop scalar
     "pool_turnover_sp1", "pool_turnover_stem_sp1",   # pool whole-vector / element
     "pool_alloc_leaf_sp1",                           # pool alloc, allowed pool
+    "cy0_to_ceq_multiplier",                         # soil Ceq/Cy0 multiplier
+    "litter_carbon", "litter_nitrogen",              # litter C/N content
+    "base_cover", "proj_cover",                      # soil cover on/off
 ])
 def test_accepts_valid_names_across_all_families(name):
     assert unrecognised_reason(name, _species_ctx()) is None

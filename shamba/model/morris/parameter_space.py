@@ -15,6 +15,8 @@ from model.common.constants import (
     volatile_frac_synthetic_fertiliser_default,
     TREE_ROOT_IN_TOP_30,
     CROP_ROOT_IN_TOP_30,
+    ORGANIC_INPUT_C,
+    ORGANIC_INPUT_N,
 )
 from model.tree_params import TREE_SPECIES_DIST_KEY_PATTERN
 from model.crop_params import CROP_SPECIES_DIST_KEY_PATTERN
@@ -60,6 +62,8 @@ class MorrisDesignRowResult(NamedTuple):
     pool_species_data: Dict[int, Dict]
     tree_root_in_top_30: float
     crop_root_in_top_30: float
+    litter_carbon: float
+    litter_nitrogen: float
 
 
 def build_salib_problem(
@@ -239,7 +243,8 @@ def apply_design_row(
     fractions, synthetic-fertiliser N, climate) — a multiplier can never
     lift a zero baseline.
 
-    Soil Ceq and iom are recomputed from drawn Cy0, matching SoilParams.create() logic.
+    Soil Ceq and iom are recomputed from drawn Cy0, matching SoilParams.create()
+    logic (Ceq = cy0_to_ceq_multiplier * Cy0, default multiplier 1.25).
     Climate CI-deltas shift each month by that month's own std (clamped to zero
     from below for rain/evaporation). Thinning-fraction/mortality-fraction and
     sf_n proportions are clamped to [0, 1] after the delta is applied.
@@ -254,7 +259,8 @@ def apply_design_row(
     # --- Soil ---
     cy0 = vals.get("cy0", base_soil.Cy0)
     clay = vals.get("clay", base_soil.clay)
-    ceq = 1.25 * cy0
+    ceq_multiplier = vals.get("cy0_to_ceq_multiplier", 1.25)
+    ceq = ceq_multiplier * cy0
     iom = 0.049 * ceq ** 1.139
     # Quantile fields are MC metadata; set them equal to drawn values so the
     # RothC schema invariant (q05 <= mean <= q95) always holds for design points.
@@ -507,6 +513,31 @@ def apply_design_row(
             base_arr = np.asarray(base_input[data_key], dtype=float)
             input_dict[data_key] = np.clip(np.full_like(base_arr, vals[direct_key]), 0.0, 1.0)
 
+    # --- Soil cover: direct, as a fraction of months covered ---
+    # RothC's cover checks (roth_c.py's get_rmf()/get_acc_tsmd()) are exact
+    # equality against 1 for a given month, not a continuous multiplier —
+    # cover is fundamentally a per-month "crop present"/bare flag, not a
+    # magnitude that can be scaled. So rather than assigning a single
+    # fractional value to every element (which RothC would silently read as
+    # "bare" unless it happened to be exactly 1), the drawn value in [0, 1]
+    # sets how many of the 12 calendar months are flagged covered — round(x
+    # * 12) months, always the first months of the year, then 0 for the
+    # rest — tiled across however many years the base array spans. This
+    # keeps every individual month a real 0/1 RothC expects, while still
+    # giving Morris a genuinely continuous, non-degenerate screening axis.
+    for direct_key in ("base_cover", "proj_cover"):
+        if direct_key in vals and direct_key in input_dict:
+            base_arr = np.asarray(base_input[direct_key], dtype=float)
+            n_covered = int(round(np.clip(vals[direct_key], 0.0, 1.0) * 12))
+            month_pattern = np.zeros(12)
+            month_pattern[:n_covered] = 1.0
+            n_periods = len(base_arr)
+            tiled = np.tile(month_pattern, n_periods // 12)
+            remainder = n_periods - len(tiled)
+            if remainder:
+                tiled = np.concatenate([tiled, month_pattern[:remainder]])
+            input_dict[direct_key] = tiled
+
     # --- Crop yield/residue-left delta (all cohort indices) ---
     # Additive: yield is an absolute per-site/per-crop quantity (kg/ha), not
     # a fraction, so this shifts it in whatever units the base yield is in
@@ -529,6 +560,10 @@ def apply_design_row(
     tree_root_in_top_30 = vals.get("tree_root_in_top_30", TREE_ROOT_IN_TOP_30)
     crop_root_in_top_30 = vals.get("crop_root_in_top_30", CROP_ROOT_IN_TOP_30)
 
+    # --- Litter carbon/nitrogen content (global scalars, no base object to copy) ---
+    litter_carbon = vals.get("litter_carbon", ORGANIC_INPUT_C)
+    litter_nitrogen = vals.get("litter_nitrogen", ORGANIC_INPUT_N)
+
     return MorrisDesignRowResult(
         input_dict=input_dict,
         soil=soil,
@@ -540,4 +575,6 @@ def apply_design_row(
         pool_species_data=pool_species_data,
         tree_root_in_top_30=tree_root_in_top_30,
         crop_root_in_top_30=crop_root_in_top_30,
+        litter_carbon=litter_carbon,
+        litter_nitrogen=litter_nitrogen,
     )
