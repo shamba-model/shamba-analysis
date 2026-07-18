@@ -56,3 +56,22 @@ def test_litter_model(csv_input_file, expected_base_emissions, expected_project_
 
     assert litter_base_emissions == pytest.approx(expected_base_emissions, rel=1e-5)
     assert litter_project_emissions == pytest.approx(expected_project_emissions, rel=1e-5)
+
+
+def test_from_defaults_carbon_nitrogen_override():
+    """from_defaults() falls back to CONSTANTS.ORGANIC_INPUT_C/N when carbon/
+    nitrogen aren't given, and uses the override — reflected in both the
+    stored scalar and the computed carbon/nitrogen inputs — when they are."""
+    import model.common.constants as CONSTANTS
+
+    litter_vector = np.array([2.0, 4.0])
+
+    default = LitterModel.from_defaults(litter_vector=litter_vector)
+    assert default.carbon == CONSTANTS.ORGANIC_INPUT_C
+    assert default.nitrogen == CONSTANTS.ORGANIC_INPUT_N
+
+    overridden = LitterModel.from_defaults(litter_vector=litter_vector, carbon=0.4, nitrogen=0.02)
+    assert overridden.carbon == pytest.approx(0.4)
+    assert overridden.nitrogen == pytest.approx(0.02)
+    np.testing.assert_allclose(overridden.output["above"]["carbon"], litter_vector * 0.4)
+    np.testing.assert_allclose(overridden.output["above"]["nitrogen"], litter_vector * 0.02)

@@ -217,13 +217,20 @@ class GetLitterModelReturnData(NamedTuple):
 
 
 def get_litter_model_data(
-    intervention_input: Dict[str, Union[float, int]], no_of_years: int
+    intervention_input: Dict[str, Union[float, int]],
+    no_of_years: int,
+    litter_carbon: float = CONSTANTS.ORGANIC_INPUT_C,
+    litter_nitrogen: float = CONSTANTS.ORGANIC_INPUT_N,
 ) -> GetLitterModelReturnData:
     litter_external_base = LitterModel.from_defaults(
         litter_vector=intervention_input["base_lit_qty1"],
+        carbon=litter_carbon,
+        nitrogen=litter_nitrogen,
     )
     litter_external_project = LitterModel.from_defaults(
         litter_vector=intervention_input["proj_lit_qty1"],
+        carbon=litter_carbon,
+        nitrogen=litter_nitrogen,
     )
     synthetic_fertiliser_base = LitterModel.synthetic_fertiliser(
         quantity_vector=intervention_input["base_sf_qty1"],
@@ -632,6 +639,8 @@ def handle_intervention(
     soil_model_params: Optional[SoilModelParams] = None,
     tree_root_in_top_30: float = CONSTANTS.TREE_ROOT_IN_TOP_30,
     crop_root_in_top_30: float = CONSTANTS.CROP_ROOT_IN_TOP_30,
+    litter_carbon: float = CONSTANTS.ORGANIC_INPUT_C,
+    litter_nitrogen: float = CONSTANTS.ORGANIC_INPUT_N,
 ):
     no_of_years = get_int(CONSTANTS.NO_OF_YEARS_KEY, intervention_input)
 
@@ -662,7 +671,10 @@ def handle_intervention(
     )
 
     litter_model_data = get_litter_model_data(
-        no_of_years=no_of_years, intervention_input=intervention_input
+        no_of_years=no_of_years,
+        intervention_input=intervention_input,
+        litter_carbon=litter_carbon,
+        litter_nitrogen=litter_nitrogen,
     )
 
     tree_model_data = get_tree_model_data(

@@ -76,13 +76,14 @@ def create(
     return schema.load(params)  # type: ignore
 
 
-def from_defaults(litter_vector):
+def from_defaults(litter_vector, carbon=None, nitrogen=None):
     """
-    Same as create, but with default litter parameters.
+    Same as create, but with default litter carbon/nitrogen content,
+    optionally overridden (e.g. for Morris sensitivity screening).
     """
     params = {
-        "carbon": CONSTANTS.ORGANIC_INPUT_C,
-        "nitrogen": CONSTANTS.ORGANIC_INPUT_N,
+        "carbon": CONSTANTS.ORGANIC_INPUT_C if carbon is None else carbon,
+        "nitrogen": CONSTANTS.ORGANIC_INPUT_N if nitrogen is None else nitrogen,
     }
     return create(litter_params=params, litter_vector=litter_vector)
 
