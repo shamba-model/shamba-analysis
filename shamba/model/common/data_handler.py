@@ -24,6 +24,12 @@ REQUIRED_HEADER_DATATYPE = {
     "rain": "non-negative float",
     "evap": "non-negative float",
     "pet": "non-negative float",
+    # Inter-annual monthly climatology std, consumed by the Morris climate
+    # parameters (temp/rain/evap _ci_delta) and the Monte Carlo climate sampler.
+    # A standard deviation is non-negative by definition.
+    "temp_std": "non-negative float",
+    "rain_std": "non-negative float",
+    "evap_std": "non-negative float",
     "base_cover": "binary",
     "proj_cover": "binary",
     "fire_on_base": "binary",
