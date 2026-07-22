@@ -326,9 +326,10 @@ def main() -> None:
     write_morris_results(si_df, results_path)
     print(f"  Results written to {results_path}")
 
-    # --- Print top-10 by mu_star (averaged over years) ---
+    # --- Print top-10 by mu_star (averaged over years, excluding the total row) ---
     mean_mu_star = (
-        si_df.groupby("parameter")["mu_star"]
+        si_df[si_df["year"] != "total"]
+        .groupby("parameter")["mu_star"]
         .mean()
         .sort_values(ascending=False)
     )
@@ -336,6 +337,18 @@ def main() -> None:
     print(f"  {'Parameter':<40} {'Mean μ*':>12}")
     print("  " + "-" * 54)
     for name, val in mean_mu_star.head(10).items():
+        print(f"  {name:<40} {val:>12.6f}")
+
+    # --- Print top-10 by mu_star for the total emissions difference ---
+    total_mu_star = (
+        si_df[si_df["year"] == "total"]
+        .set_index("parameter")["mu_star"]
+        .sort_values(ascending=False)
+    )
+    print("\nTop parameters by μ* for total emissions difference:")
+    print(f"  {'Parameter':<40} {'Total μ*':>12}")
+    print("  " + "-" * 54)
+    for name, val in total_mu_star.head(10).items():
         print(f"  {name:<40} {val:>12.6f}")
 
 

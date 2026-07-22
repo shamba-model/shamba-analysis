@@ -143,10 +143,13 @@ def compute_morris_indices(
     num_resamples: int = 100,
     seed: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Compute Morris indices for each output year.
+    """Compute Morris indices for each output year, plus a total-difference summary.
 
-    Runs SALib morris.analyze() once per year column of Y, then assembles
-    a long-format DataFrame with one row per (parameter, year) combination.
+    Runs SALib morris.analyze() once per year column of Y, then once more on
+    Y summed over years (the total emissions difference across the whole
+    project horizon, per run). Assembles a long-format DataFrame with one row
+    per (parameter, year) combination, plus one row per parameter with
+    year="total" for the summed-output analysis.
 
     Columns: parameter, year, mu, mu_star, sigma, mu_star_conf.
     """
@@ -171,6 +174,24 @@ def compute_morris_indices(
                 "sigma": float(si["sigma"][j]),
                 "mu_star_conf": float(si["mu_star_conf"][j]),
             })
+
+    si_total = morris_analyze.analyze(
+        problem,
+        X,
+        Y.sum(axis=1),
+        num_resamples=num_resamples,
+        seed=seed,
+        print_to_console=False,
+    )
+    for j, name in enumerate(problem["names"]):
+        records.append({
+            "parameter": name,
+            "year": "total",
+            "mu": float(si_total["mu"][j]),
+            "mu_star": float(si_total["mu_star"][j]),
+            "sigma": float(si_total["sigma"][j]),
+            "mu_star_conf": float(si_total["mu_star_conf"][j]),
+        })
 
     return pd.DataFrame(records, columns=["parameter", "year", "mu", "mu_star", "sigma", "mu_star_conf"])
 
