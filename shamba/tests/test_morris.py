@@ -528,8 +528,12 @@ def test_compute_morris_indices_column_names():
 
     expected_cols = {"parameter", "year", "mu", "mu_star", "sigma", "mu_star_conf"}
     assert expected_cols.issubset(set(df.columns))
-    assert len(df) == k * N_YEARS
+    # One row per (parameter, year) for years 1..N_YEARS, plus one row per
+    # parameter for the summed-output "total" analysis.
+    assert len(df) == k * N_YEARS + k
     assert set(df["parameter"].unique()) == set(param_names)
+    assert set(df["year"].unique()) == {1, 2, 3, "total"}
+    assert len(df[df["year"] == "total"]) == k
 
 
 # ---------------------------------------------------------------------------

@@ -232,7 +232,7 @@ def main() -> None:
         "base_lit_qty_scale": ("base_lit_qty1",),
         "proj_lit_qty_scale": ("proj_lit_qty1",),
         # Emission factors below are shared across base/project (not split
-        # like the params above), so they're only dead if *neither* side
+        # like the params above), so they're only removed if neither side
         # ever applies the relevant input — see emit.py:fert_emit().
         "volatile_frac_organic_fertiliser": ("base_lit_qty1", "proj_lit_qty1"),
         "volatile_frac_synthetic_fertiliser": ("base_sf_qty1", "proj_sf_qty1"),
@@ -241,19 +241,36 @@ def main() -> None:
         if not _any_nonzero(*data_keys):
             bounds_dict.pop(param_key, None)
 
-    # Fire-related emission factors: dead if fire never occurs. Crop residues
-    # can be burned on-farm (fire_on) or off-farm (fire_off via burn_off);
-    # trees are only burned on-farm — see emit.py:fire_emit().
-    if not _any_nonzero("fire_on_base", "fire_on_proj", "fire_off_base", "fire_off_proj"):
+    # Fire-related emission factors: remove only if fire can never occur.
+    # base_fire_on/proj_fire_on/base_fire_off/proj_fire_off are "direct" 
+    # Morris parameters (see parameter_registry.py). apply_design_row()
+    # replaces the fire_on/off arrays outright with the drawn value, regardless
+    # of what the static mgmt CSV says. Crop residues can be
+    # burned on-farm (fire_on) or off-farm (fire_off via burn_off); trees are
+    # only burned on-farm — see emit.py:fire_emit().
+    _fire_toggles = ("base_fire_on", "proj_fire_on", "base_fire_off", "proj_fire_off")
+    _crop_fire_possible = _any_nonzero(
+        "fire_on_base", "fire_on_proj", "fire_off_base", "fire_off_proj"
+    ) or any(k in bounds_dict for k in _fire_toggles)
+    if not _crop_fire_possible:
         bounds_dict.pop("ef_burn_crop_N2O_scale", None)
         bounds_dict.pop("ef_burn_crop_CH4_scale", None)
         bounds_dict.pop("combustion_factor_crop", None)
-    if not _any_nonzero("fire_on_base", "fire_on_proj"):
+    _tree_fire_possible = _any_nonzero("fire_on_base", "fire_on_proj") or any(
+        k in bounds_dict for k in ("base_fire_on", "proj_fire_on")
+    )
+    if not _tree_fire_possible:
         bounds_dict.pop("ef_burn_tree_N2O_scale", None)
         bounds_dict.pop("ef_burn_tree_CH4_scale", None)
         bounds_dict.pop("combustion_factor_tree", None)
 
-    # Remove thinning/mortality parameters if no non-zero values are present.
+    # Remove thinning/mortality parameters only if there's no matching cohort
+    # column at all (i.e. no tree cohorts of that kind exist for this plot).
+    # These are "delta" (thinning: base + x, clamped) or "direct" (mortality:
+    # x replaces the value outright) Morris parameters. Unlike the "scale"
+    # (base * x) parameters above, a zero baseline does NOT guarantee zero
+    # effect so the only case where these truly have no effect is when the 
+    # cohort column they'd modify doesn't exist in the data at all.
     for param_key, pattern in (
         ("proj_thinning_delta", r"^thin_proj_cohort\d+$"),
         ("base_thinning_delta", r"^thin_base_cohort\d+$"),
@@ -261,11 +278,7 @@ def main() -> None:
         ("base_mortality", r"^mort_base_cohort\d+$"),
     ):
         matching = [k for k in vector_input_data if re.match(pattern, k)]
-        has_nonzero = any(
-            np.any(np.asarray(vector_input_data[k], dtype=float) != 0.0)
-            for k in matching
-        )
-        if not has_nonzero:
+        if not matching:
             bounds_dict.pop(param_key, None)
 
     param_names = list(bounds_dict.keys())
