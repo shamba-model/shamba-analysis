@@ -294,6 +294,8 @@ def main() -> None:
 
     results_dir = Path(args.results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
+    log_files_dir = results_dir / "log_files"
+    log_files_dir.mkdir(exist_ok=True)
     batch_log_path = results_dir / "batch_log.csv"
     write_header = not batch_log_path.exists()
     batch_log = batch_log_path.open("a", newline="")
@@ -339,6 +341,12 @@ def main() -> None:
         site_start = time.monotonic()
         returncode = run_site(project_name, prefix, args, log_path)
         elapsed = time.monotonic() - site_start
+
+        # Copy the per-site log alongside the other collected outputs, so
+        # they can be inspected, even if the site failed and the project 
+        # folder is later deleted or overwritten.
+        if not args.dry_run and log_path.exists():
+            shutil.copyfile(log_path, log_files_dir / f"morris_run_{project_name}.log")
 
         outputs_ok = args.dry_run or collect_outputs(project_name, results_dir)
         ok = (returncode == 0) and outputs_ok
