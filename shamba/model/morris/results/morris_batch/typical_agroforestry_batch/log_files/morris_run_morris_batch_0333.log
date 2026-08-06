@@ -1,6 +1,6 @@
 Errors in soil params: {'Cy0_q05': ['Special numeric values (nan or infinity) are not permitted.'], 'Cy0_q95': ['Special numeric values (nan or infinity) are not permitted.'], 'clay_q05': ['Special numeric values (nan or infinity) are not permitted.'], 'clay_q95': ['Special numeric values (nan or infinity) are not permitted.']}
 Traceback (most recent call last):
-  File "/app/run_morris_direct.py", line 356, in <module>
+  File "/app/run_morris_direct.py", line 369, in <module>
     main()
   File "/app/run_morris_direct.py", line 182, in main
     soil_params = SoilParams.get_soil_params(
