@@ -1,0 +1,15 @@
+Errors in soil params: {'Cy0_q05': ['Special numeric values (nan or infinity) are not permitted.'], 'Cy0_q95': ['Special numeric values (nan or infinity) are not permitted.'], 'clay_q05': ['Special numeric values (nan or infinity) are not permitted.'], 'clay_q95': ['Special numeric values (nan or infinity) are not permitted.']}
+Traceback (most recent call last):
+  File "/app/run_morris_direct.py", line 369, in <module>
+    main()
+  File "/app/run_morris_direct.py", line 182, in main
+    soil_params = SoilParams.get_soil_params(
+  File "/app/model/soil_params.py", line 147, in get_soil_params
+    return create(params)
+  File "/app/model/soil_params.py", line 110, in create
+    return schema.load(params)  # type: ignore
+  File "/root/.cache/pypoetry/virtualenvs/shamba-9TtSrW0h-py3.10/lib/python3.10/site-packages/marshmallow/schema.py", line 792, in load
+    return self._do_load(
+  File "/root/.cache/pypoetry/virtualenvs/shamba-9TtSrW0h-py3.10/lib/python3.10/site-packages/marshmallow/schema.py", line 999, in _do_load
+    raise exc
+marshmallow.exceptions.ValidationError: {'Cy0_q05': ['Special numeric values (nan or infinity) are not permitted.'], 'Cy0_q95': ['Special numeric values (nan or infinity) are not permitted.'], 'clay_q05': ['Special numeric values (nan or infinity) are not permitted.'], 'clay_q95': ['Special numeric values (nan or infinity) are not permitted.']}

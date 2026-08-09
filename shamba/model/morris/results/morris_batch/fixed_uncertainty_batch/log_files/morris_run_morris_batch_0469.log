@@ -1,0 +1,16 @@
+Morris analysis: 84 parameters, 40 trajectories
+  Parameters: ['cy0', 'clay', 'temp_ci_delta', 'rain_ci_delta', 'evap_ci_delta', 'ef_burn_crop_N2O_scale', 'ef_burn_crop_CH4_scale', 'ef_burn_tree_N2O_scale', 'ef_burn_tree_CH4_scale', 'ef_N_inputs', 'combustion_factor_crop', 'combustion_factor_tree', 'volatile_frac_organic_fertiliser', 'volatile_frac_synthetic_fertiliser', 'base_sf_qty_scale', 'proj_lit_qty_scale', 'base_stand_density_scale', 'proj_stand_density_scale', 'tree_wood_dens_sp1', 'base_cover', 'base_fire_off', 'base_fire_on', 'base_mortality', 'base_sf_n_delta', 'base_thinning_delta', 'crop_base_left_delta', 'crop_base_yield_delta', 'crop_carbon_above_sp3', 'crop_carbon_below_sp3', 'crop_intercept_sp3', 'crop_nitrogen_above_sp3', 'crop_nitrogen_below_sp3', 'crop_carbon_above_sp10', 'crop_carbon_below_sp10', 'crop_intercept_sp10', 'crop_nitrogen_above_sp10', 'crop_nitrogen_below_sp10', 'crop_proj_left_delta', 'crop_proj_yield_delta', 'crop_root_in_top_30', 'crop_root_to_shoot_sp3', 'crop_slope_sp3', 'crop_root_to_shoot_sp10', 'crop_slope_sp10', 'cy0_to_ceq_multiplier', 'litter_carbon', 'litter_nitrogen', 'mortality_fraction_branch_delta', 'mortality_fraction_croot_delta', 'mortality_fraction_froot_delta', 'mortality_fraction_leaf_delta', 'mortality_fraction_stem_delta', 'pool_alloc_froot_sp1', 'pool_alloc_leaf_sp1', 'pool_alloc_stem_sp1', 'pool_turnover_branch_sp1', 'pool_turnover_croot_sp1', 'pool_turnover_froot_sp1', 'pool_turnover_leaf_sp1', 'pool_turnover_stem_sp1', 'proj_cover', 'proj_fire_off', 'proj_fire_on', 'proj_mortality', 'proj_thinning_delta', 'roth_c_cover_c', 'roth_c_dpm_frac_crop', 'roth_c_dpm_frac_tree', 'roth_c_moisture_b_slope', 'roth_c_temp_a1', 'roth_c_temp_a2', 'thinning_fraction_branch_delta', 'thinning_fraction_croot_delta', 'thinning_fraction_froot_delta', 'thinning_fraction_leaf_delta', 'thinning_fraction_stem_delta', 'tree_carbon_sp1', 'tree_nitrogen_branch_sp1', 'tree_nitrogen_croot_sp1', 'tree_nitrogen_froot_sp1', 'tree_nitrogen_leaf_sp1', 'tree_nitrogen_stem_sp1', 'tree_root_in_top_30', 'tree_root_to_shoot_sp1']
+Traceback (most recent call last):
+  File "/app/run_morris_direct.py", line 369, in <module>
+    main()
+  File "/app/run_morris_direct.py", line 296, in main
+    X = morris_sample.sample(
+  File "/root/.cache/pypoetry/virtualenvs/shamba-9TtSrW0h-py3.10/lib/python3.10/site-packages/SALib/sample/morris/morris.py", line 146, in sample
+    sample_morris = scale_samples(sample_morris, problem)
+  File "/root/.cache/pypoetry/virtualenvs/shamba-9TtSrW0h-py3.10/lib/python3.10/site-packages/SALib/util/__init__.py", line 77, in scale_samples
+    _scale_samples(params, bounds)
+  File "/root/.cache/pypoetry/virtualenvs/shamba-9TtSrW0h-py3.10/lib/python3.10/site-packages/SALib/util/__init__.py", line 37, in _scale_samples
+    lower_bounds, upper_bounds = _check_bounds(bounds)
+  File "/root/.cache/pypoetry/virtualenvs/shamba-9TtSrW0h-py3.10/lib/python3.10/site-packages/SALib/util/util_funcs.py", line 149, in _check_bounds
+    raise ValueError("Bounds are not legal")
+ValueError: Bounds are not legal
