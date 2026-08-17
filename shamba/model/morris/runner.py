@@ -75,6 +75,28 @@ def _run_single_morris(args: _MorrisSampleArgs) -> np.ndarray:
     return emissions_diff                   # shape (N_YEARS,)
 
 
+def _execute(
+    sample_args: List[_MorrisSampleArgs],
+    on_progress: Optional[Callable[[int, int], None]] = None,
+) -> np.ndarray:
+    """Run _run_single_morris() for each task in sample_args, across a process pool.
+
+    Each task carries its own param_names/x, so this makes no assumption that
+    param_names is uniform across rows — safe for both a SALib trajectory
+    design (run_morris(), one shared param_names) and a one-at-a-time design
+    (run_oat(), one param_name perturbed per row).
+    """
+    n_runs = len(sample_args)
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        results = list(executor.map(_run_single_morris, sample_args))
+
+    if on_progress is not None:
+        on_progress(n_runs, n_runs)
+
+    return np.array(results)  # shape (n_runs, N_YEARS)
+
+
 def run_morris(
     X: np.ndarray,
     param_names: List[str],
@@ -127,13 +149,25 @@ def run_morris(
         for i in range(n_runs)
     ]
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        results = list(executor.map(_run_single_morris, sample_args))
+    return _execute(sample_args, on_progress=on_progress)
 
-    if on_progress is not None:
-        on_progress(n_runs, n_runs)
 
-    return np.array(results)  # shape (n_runs, N_YEARS)
+def run_oat(
+    sample_args: List[_MorrisSampleArgs],
+    on_progress: Optional[Callable[[int, int], None]] = None,
+) -> np.ndarray:
+    """Run handle_intervention() for a one-at-a-time (OAT) min/max design.
+
+    Unlike run_morris(), each task in sample_args carries its own param_names
+    (typically a single parameter name, or none for a baseline row), so a
+    parameter left out of a given task's param_names is simply left at its
+    real base value for that run rather than being perturbed — see
+    apply_design_row()'s vals.get(name, base_...) fallback in
+    parameter_space.py. Build sample_args with _MorrisSampleArgs directly.
+
+    Returns Y array of shape (len(sample_args), N_YEARS).
+    """
+    return _execute(sample_args, on_progress=on_progress)
 
 
 def compute_morris_indices(
