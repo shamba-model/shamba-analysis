@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from typing import List
@@ -164,3 +165,24 @@ def main() -> None:
     )
 
     Y = run_oat(run_list)
+
+    results_df = build_oat_results_df(Y, ctx.param_names)
+    
+
+    X = np.array(list(zip([run.param_names[0] if run.param_names else "baseline" for run in run_list], [run.x[0] if run.x else np.nan for run in run_list])),
+                   dtype=[('parameter', 'U100'), ('value', 'f8')])
+
+        # --- Output directory ---
+    out_dir = Path(configuration.OUTPUT_DIR) / "plot_1"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- Save raw arrays ---
+    np.save(str(out_dir / "oat_design_X.npy"), X)
+    np.save(str(out_dir / "oat_outputs_Y.npy"), Y)
+    print(f"  Raw arrays saved to {out_dir}")
+    results_df.to_csv(str(out_dir / "oat_results.csv"), index=False)
+    print(f"  Results written to {out_dir / 'oat_results.csv'}")
+
+
+if __name__ == "__main__":
+    main()
