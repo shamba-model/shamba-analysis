@@ -239,9 +239,11 @@ def apply_design_row(
     "crop_slope_sp1"), which can't carry a "_scale" suffix since their name
     is shared with Monte Carlo's own per-species vocabulary in
     tree_params.py/crop_params.py. delta is used instead of scale wherever a
-    baseline of 0 should still be able to move (e.g. thinning/mortality
-    fractions, synthetic-fertiliser N, climate) — a multiplier can never
-    lift a zero baseline.
+    non-zero baseline should be able to move by an absolute amount rather
+    than a multiplier (e.g. thinning/mortality fractions, synthetic-
+    fertiliser N, crop yield/residue-left, climate) — but for the
+    management/crop fields (not climate), a baseline of real zero is left
+    at zero rather than being lifted by the delta.
 
     Soil Ceq and iom are recomputed from drawn Cy0, matching SoilParams.create()
     logic (Ceq = cy0_to_ceq_multiplier * Cy0, default multiplier 1.25).
@@ -404,8 +406,7 @@ def apply_design_row(
                 pool_species_data[sc][field] = arr
 
     # --- Management: synthetic fertiliser N fraction delta (all cohort indices) ---
-    # Additive, not multiplicative: a baseline of 0 (no synthetic fertiliser
-    # N) would otherwise be stuck at 0 under any multiplier.
+    # Additive, but a baseline of zero is assumed to be real zero.
     for delta_key, key_pattern in (
         ("base_sf_n_delta", r"^base_sf_n\d+$"),
         ("proj_sf_n_delta", r"^proj_sf_n\d+$"),
@@ -415,7 +416,8 @@ def apply_design_row(
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr + d, 0.0, 1.0)
+                    new_arr = np.clip(np.where(base_arr != 0, base_arr + d, base_arr), 0.0, 1.0,)
+                    input_dict[k] = new_arr
 
     # --- Management: quantity scale multipliers (all cohort/event indices) ---
     for scale_key, key_pattern in (
@@ -432,8 +434,8 @@ def apply_design_row(
                     input_dict[k] = np.clip(base_arr * s, 0.0, None)
 
     # --- Management: thinning regime delta, mortality regime direct ---
-    # Thinning regime is additive for the same floor-at-zero reason as
-    # sf_n above. Mortality regime is direct: the drawn value replaces every
+    # Thinning regime is additive, but a baseline of zero is assumed to be real 
+    # zero. Mortality regime is direct: the drawn value replaces every
     # matching cohort's mortality-event indicator outright, not derived from
     # base at all.
     for delta_key, key_pattern in (
@@ -445,7 +447,8 @@ def apply_design_row(
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr + d, 0.0, 1.0)
+                    new_arr = np.clip(np.where(base_arr != 0, base_arr + d, base_arr), 0.0, 1.0,)
+                    input_dict[k] = new_arr
 
     for direct_key, key_pattern in (
         ("proj_mortality", r"^mort_proj_cohort\d+$"),
@@ -463,8 +466,8 @@ def apply_design_row(
     # either the mgmt-input override column or the pool_species_data species
     # default, depending on the plot — so both sources are shifted together,
     # rather than perturbing only one and risking zero effect on plots that
-    # read the other. Additive, not multiplicative, for the same
-    # floor-at-zero reason as sf_n/thinning_delta above.
+    # read the other. Additive, but a baseline of zero is assumed to be 
+    # real zero.
     for field, mgmt_prefix in _FRACTION_MGMT_PREFIX.items():
         for pool in _BIOMASS_POOLS:
             delta_key = f"{field}_{pool}_delta"
@@ -476,12 +479,14 @@ def apply_design_row(
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr + d, 0.0, 1.0)
+                    new_arr = np.clip(np.where(base_arr != 0, base_arr + d, base_arr), 0.0, 1.0,)
+                    input_dict[k] = new_arr
 
             pool_idx = _BIOMASS_POOL_INDEX[pool]
             for sc in pool_species_data:
                 arr = pool_species_data[sc][field].copy()
-                arr[pool_idx] = np.clip(arr[pool_idx] + d, 0.0, 1.0)
+                base_val = arr[pool_idx]
+                arr[pool_idx] = np.clip(base_val + d, 0.0, 1.0) if base_val != 0 else base_val
                 pool_species_data[sc][field] = arr
 
     # --- Tree stand density: scale planting density, base/proj independently ---
@@ -541,8 +546,8 @@ def apply_design_row(
     # --- Crop yield/residue-left delta (all cohort indices) ---
     # Additive: yield is an absolute per-site/per-crop quantity (kg/ha), not
     # a fraction, so this shifts it in whatever units the base yield is in
-    # rather than by a percentage. Residue-left is a [0,1] fraction, additive
-    # for the same floor-at-zero reason as the management deltas above.
+    # rather than by a percentage. Residue-left is a [0,1] fraction, 
+    # additive, but a baseline of zero is assumed to be real zero.
     for delta_key, key_pattern, clip_hi in (
         ("crop_base_yield_delta", r"^crop_base_yd\d+$", None),
         ("crop_proj_yield_delta", r"^crop_proj_yd\d+$", None),
@@ -554,7 +559,8 @@ def apply_design_row(
             for k in list(input_dict.keys()):
                 if re.match(key_pattern, k):
                     base_arr = np.asarray(base_input[k], dtype=float)
-                    input_dict[k] = np.clip(base_arr + d, 0.0, clip_hi)
+                    new_arr = np.clip(np.where(base_arr != 0, base_arr + d, base_arr), 0.0, clip_hi)
+                    input_dict[k] = new_arr
 
     # --- Tree/crop root-in-top-30 (global scalars, no base object to copy) ---
     tree_root_in_top_30 = vals.get("tree_root_in_top_30", TREE_ROOT_IN_TOP_30)

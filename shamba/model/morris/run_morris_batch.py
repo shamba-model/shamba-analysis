@@ -61,6 +61,12 @@ COMMON_COPY_FILES = (
 # Templates named "{}_*.csv": the "{}" becomes the site prefix (site_XXXX).
 TEMPLATE_GLOB = "{}_*.csv"
 
+# TestSites_withSoilGridsQs.csv's clay columns are raw SoilGrids units; divide
+# by this to match the 0-100 percentage read_soil_table() expects - the same
+# factor convert_units_in_api_response() applies on the live API path (see
+# UNIT_CONVERSIONS[PROPORTION_OF_CLAY_IN_FINE_FRACTION] in data_sources/soil.py).
+CLAY_UNIT_CONVERSION_FACTOR = 10
+
 # TestSites columns, in file order. soil-info.csv needs a subset of these.
 TESTSITES_COLUMNS = (
     "lat", "lon", "kg_class", "ttc", "landcover_crop_frac", "koppen_geiger",
@@ -176,15 +182,23 @@ def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str,
     # soil-info.csv, built from this site's TestSites row. plot_name=0 matches the
     # constant used in the shared {}_plot_data.csv template. Columns per
     # read_soil_table() in data_sources/soil.py.
+    #
+    # TestSites_withSoilGridsQs.csv's clay/clay_q05/clay_q95 columns are raw
+    # SoilGrids units (see append_soilgrids_quantiles.py's docstring), not a
+    # 0-100 percentage. read_soil_table() applies no conversion (it expects an
+    # already-correct percentage, unlike the live API path, which divides by
+    # CLAY_UNIT_CONVERSION_FACTOR via convert_units_in_api_response() in
+    # data_sources/soil.py) - so it must be applied here before writing.
     soil_info_path = input_dir / "soil-info.csv"
     with soil_info_path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["plot_name", "Cy0", "clay", "Cy0_q05", "Cy0_q95", "clay_q05", "clay_q95"])
         writer.writerow([
             "0",
-            site_row["ocs"], site_row["clay"],
+            site_row["ocs"], float(site_row["clay"]) / CLAY_UNIT_CONVERSION_FACTOR,
             site_row["ocs_q05"], site_row["ocs_q95"],
-            site_row["clay_q05"], site_row["clay_q95"],
+            float(site_row["clay_q05"]) / CLAY_UNIT_CONVERSION_FACTOR,
+            float(site_row["clay_q95"]) / CLAY_UNIT_CONVERSION_FACTOR,
         ])
 
     # Species-lookup tables and the bounds file, copied verbatim so the project
