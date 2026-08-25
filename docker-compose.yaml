@@ -15,6 +15,7 @@ services:
       - ./shamba/shamba_command_line.py:/app/shamba_command_line.py
       - ./shamba/run_mc_direct.py:/app/run_mc_direct.py
       - ./shamba/run_morris_direct.py:/app/run_morris_direct.py
+      - ./shamba/run_oat_direct.py:/app/run_oat_direct.py
       - ./shamba/tests:/app/tests
     working_dir: /app/server
     command: poetry run fastapi dev main.py --host 0.0.0.0 --port 8000 --reload
