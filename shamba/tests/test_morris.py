@@ -256,8 +256,11 @@ def test_apply_design_row_pool_alloc_leaf_and_stem_apply():
 def test_apply_design_row_thinning_fraction_delta_applies_to_mgmt_column_and_pool_default():
     """thinning_fraction_{pool}_delta shifts both the mgmt-input override
     column (clamped to [0,1]) and the species pool_species_data default
-    additively — not multiplicatively, so a zero baseline can still move;
-    the branch column is targeted via its 'br' abbreviation."""
+    additively wherever the baseline is non-zero, but leaves a real zero
+    baseline at zero — a zero thinning fraction means "no thinning happened
+    that year", not "unknown magnitude" (see commit 13ef5aa, "Implement
+    'real zero' in _delta cases"). The branch column is targeted via its
+    'br' abbreviation."""
     base_input = {
         "thin_base_leaf_cohort1": np.array([0.3]),
         "thin_proj_br_cohort1": np.array([0.0]),
@@ -270,8 +273,8 @@ def test_apply_design_row_thinning_fraction_delta_applies_to_mgmt_column_and_poo
         base_input=base_input, base_pool_species_data=base_pool,
     )
 
-    np.testing.assert_allclose(result.input_dict["thin_base_leaf_cohort1"], [0.5])
-    np.testing.assert_allclose(result.input_dict["thin_proj_br_cohort1"], [0.5])  # 0.0 + 0.5, was stuck at 0 under a scale
+    np.testing.assert_allclose(result.input_dict["thin_base_leaf_cohort1"], [0.5])  # 0.3 + 0.2, non-zero baseline moves
+    np.testing.assert_allclose(result.input_dict["thin_proj_br_cohort1"], [0.0])  # real zero baseline stays put
     assert result.pool_species_data[1]["thinning_fraction"][0] == pytest.approx(1.0)  # 0.9+0.2 clamped
 
 
@@ -310,8 +313,10 @@ def test_apply_design_row_sf_n_delta_shifts_and_clamps():
 
 
 def test_apply_design_row_thinning_regime_delta_mortality_regime_direct():
-    """base_thinning_delta shifts thin_base_cohort{i} additively; base_mortality
-    replaces mort_base_cohort{i} outright, every element, unrelated to base."""
+    """base_thinning_delta shifts thin_base_cohort{i} additively wherever the
+    baseline is non-zero, but leaves a real zero baseline at zero (see commit
+    13ef5aa); base_mortality replaces mort_base_cohort{i} outright, every
+    element, unrelated to base."""
     base_input = {
         "thin_base_cohort1": np.array([0.0, 0.1]),
         "mort_base_cohort1": np.array([0.02, 0.03]),
@@ -321,7 +326,7 @@ def test_apply_design_row_thinning_regime_delta_mortality_regime_direct():
         param_names=["base_thinning_delta", "base_mortality"],
         base_input=base_input,
     )
-    np.testing.assert_allclose(result.input_dict["thin_base_cohort1"], [0.3, 0.4])
+    np.testing.assert_allclose(result.input_dict["thin_base_cohort1"], [0.0, 0.4])  # real zero stays; 0.1+0.3 moves
     np.testing.assert_allclose(result.input_dict["mort_base_cohort1"], [0.15, 0.15])
 
 
@@ -339,17 +344,39 @@ def test_apply_design_row_crop_yield_left_delta():
     np.testing.assert_allclose(result.input_dict["crop_base_left1"], [1.0])  # 0.2+0.9 clamped
 
 
-def test_apply_design_row_fire_on_off_direct_replaces_array_and_clamps():
+def test_apply_design_row_fire_on_off_direct_replaces_array_with_return_interval():
     """base_fire_on/base_fire_off replace the whole fire array outright (not
-    derived from base at all) and clamp to [0, 1]."""
-    base_input = {"fire_on_base": np.array([0.6, 0.6]), "fire_off_base": np.array([0.6, 0.6])}
+    derived from base at all) with a binary vector that has a fire every
+    round(x) years, anchored at year 0 — x is a return interval in years,
+    not a fraction, since reduce_from_fire() (emit.py) only ever reduces
+    biomass on an exact fire==1 match."""
+    base_input = {
+        "fire_on_base": np.zeros(9),
+        "fire_off_base": np.zeros(9),
+    }
     result = _apply(
-        x=[1.5, 0.3],
+        x=[3.0, 1.0],
         param_names=["base_fire_on", "base_fire_off"],
         base_input=base_input,
     )
-    np.testing.assert_allclose(result.input_dict["fire_on_base"], [1.0, 1.0])  # 1.5 clamped, every element
-    np.testing.assert_allclose(result.input_dict["fire_off_base"], [0.3, 0.3])
+    np.testing.assert_allclose(
+        result.input_dict["fire_on_base"], [1, 0, 0, 1, 0, 0, 1, 0, 0]
+    )  # return interval 3: fire in years 0, 3, 6
+    np.testing.assert_allclose(
+        result.input_dict["fire_off_base"], [1, 1, 1, 1, 1, 1, 1, 1, 1]
+    )  # return interval 1: fire every year
+
+
+def test_apply_design_row_fire_return_interval_rounds_and_floors_at_one():
+    """A drawn value below 1 (or any non-integer) rounds to the nearest
+    integer return interval, floored at 1 year — never a 0-length interval."""
+    base_input = {"fire_on_base": np.zeros(6)}
+    result = _apply(
+        x=[0.4],
+        param_names=["base_fire_on"],
+        base_input=base_input,
+    )
+    np.testing.assert_allclose(result.input_dict["fire_on_base"], [1, 1, 1, 1, 1, 1])
 
 
 def test_apply_design_row_cy0_to_ceq_multiplier_overrides_default():

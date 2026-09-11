@@ -1,7 +1,5 @@
 parameter,min,max
 base_cover,0.333333333,0.666666667
-base_fire_off,0,0.2
-base_fire_on,0,0.2
 base_lit_qty_scale,0.9,1.1
 base_mortality,0.018,0.022
 base_sf_n_delta,-0.02,0.02
@@ -51,8 +49,8 @@ pool_turnover_froot_sp1,0.72,0.88
 pool_turnover_leaf_sp1,0.9,1
 pool_turnover_stem_sp1,0,0.02
 proj_cover,0.333333333,0.666666667
-proj_fire_off,0.4,0.6
-proj_fire_on,0.4,0.6
+proj_fire_off,3,10
+proj_fire_on,3,10
 proj_lit_qty_scale,0.9,1.1
 proj_mortality,0.018,0.022
 proj_sf_n_delta,-0.02,0.02

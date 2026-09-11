@@ -82,6 +82,17 @@ _Z_90_HALF = 1.645  # z-score for the 5th/95th percentile, used to infer sigma f
                      # a Q05/Q95 pair — matches monte_carlo/sampler.py's sample_soil_params().
 
 
+def _binary_fire_vector(n_years: int, return_interval: float) -> np.ndarray:
+    """Binary fire-occurrence vector of length n_years: a fire in year 0 and
+    every round(return_interval) years after that (return_interval=1 means
+    every year). Phase is always anchored at year 0 — deterministic, so the
+    same draw always produces the same vector."""
+    interval = max(1, round(return_interval))
+    vec = np.zeros(n_years)
+    vec[::interval] = 1.0
+    return vec
+
+
 def _ef_bounds(base_value: float, spec) -> Tuple[float, float]:
     """Compute ±95% CI bounds for an emission factor using its distribution spread."""
     lo = max(base_value * (1.0 - _Z_95 * spec.spread_lower), 0.0)
@@ -503,11 +514,14 @@ def apply_design_row(
                     base_val = np.atleast_1d(np.asarray(base_input[k], dtype=float))
                     input_dict[k] = np.clip(base_val * s, 0.0, None)
 
-    # --- Fire on/off: direct ---
-    # emit.fire_emit() uses the fire array as a genuine multiplier on
-    # burnable biomass, not a boolean gate, but the drawn value here still
-    # replaces it outright (every element of what's typically a per-year
-    # array), rather than being derived from the base value.
+    # --- Fire on/off: direct, as a return interval in years ---
+    # Both emit.fire_emit() (a continuous multiplier) and reduce_from_fire()
+    # (fire_on_base/proj's other consumer — nitrogen_emit() and
+    # forward_roth_c.solver()'s carbon-input reduction) treat the fire array
+    # as a genuine binary flag: reduce_from_fire() gates on an exact fire==1
+    # check, so the drawn value here is a return interval in years, not a 
+    # fraction: it replaces the real per-year array with a fresh binary vector
+    # that has a fire every round(x) years, anchored at year 0.
     for direct_key, data_key in (
         ("base_fire_on", "fire_on_base"),
         ("proj_fire_on", "fire_on_proj"),
@@ -515,8 +529,8 @@ def apply_design_row(
         ("proj_fire_off", "fire_off_proj"),
     ):
         if direct_key in vals and data_key in input_dict:
-            base_arr = np.asarray(base_input[data_key], dtype=float)
-            input_dict[data_key] = np.clip(np.full_like(base_arr, vals[direct_key]), 0.0, 1.0)
+            n_years = len(np.asarray(base_input[data_key], dtype=float))
+            input_dict[data_key] = _binary_fire_vector(n_years, vals[direct_key])
 
     # --- Soil cover: direct, as a fraction of months covered ---
     # RothC's cover checks (roth_c.py's get_rmf()/get_acc_tsmd()) are exact
