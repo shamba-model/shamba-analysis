@@ -540,16 +540,23 @@ def apply_design_row(
     # fractional value to every element (which RothC would silently read as
     # "bare" unless it happened to be exactly 1), the drawn value in [0, 1]
     # sets how many of the 12 calendar months are flagged covered — round(x
-    # * 12) months, always the first months of the year, then 0 for the
-    # rest — tiled across however many years the base array spans. This
-    # keeps every individual month a real 0/1 RothC expects, while still
-    # giving Morris a genuinely continuous, non-degenerate screening axis.
+    # * 12) months — spread evenly across the year (Bresenham-style: month i
+    # covered iff (i+1)*n_covered // 12 != i*n_covered // 12) rather than
+    # bunched at the start, then tiled across however many years the base
+    # array spans. An earlier version front-loaded the covered months into
+    # a Jan-start block, which confounded the screening axis with each
+    # site's real wet/dry season timing (RothC's moisture rate modifier
+    # only "sees" cover in dry months — roth_c.py's get_acc_tsmd()) — even
+    # spacing keeps every individual month a real 0/1 RothC expects while
+    # avoiding that seasonal-alignment artefact.
     for direct_key in ("base_cover", "proj_cover"):
         if direct_key in vals and direct_key in input_dict:
             base_arr = np.asarray(base_input[direct_key], dtype=float)
             n_covered = int(round(np.clip(vals[direct_key], 0.0, 1.0) * 12))
-            month_pattern = np.zeros(12)
-            month_pattern[:n_covered] = 1.0
+            month_idx = np.arange(12)
+            month_pattern = (
+                (month_idx + 1) * n_covered // 12 != month_idx * n_covered // 12
+            ).astype(float)
             n_periods = len(base_arr)
             tiled = np.tile(month_pattern, n_periods // 12)
             remainder = n_periods - len(tiled)
