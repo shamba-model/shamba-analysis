@@ -71,7 +71,7 @@ CLAY_UNIT_CONVERSION_FACTOR = 10
 
 # TestSites_withSoilGridsQs.csv columns, in file order. soil-info.csv needs a subset of these.
 TESTSITES_COLUMNS = (
-    "lat", "lon", "kg_class", "ttc", "landcover_crop_frac", "koppen_geiger",
+    "lat", "lon", "kg_class", "ttc", "landcover_crop_frac",
     "ocs", "clay", "ocs_q05", "ocs_q95", "clay_q05", "clay_q95",
 )
 
