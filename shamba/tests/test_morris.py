@@ -119,7 +119,7 @@ def _make_species_ctx():
 def _apply(x, param_names, base_input=None, base_soil=None, base_climate=None,
            base_emission_factors=None, base_tree_species_data=None,
            base_crop_species_data=None, base_pool_species_data=None,
-           base_soil_model_params=None):
+           base_soil_model_params=None, greenup_month=None):
     """Thin wrapper so most tests don't repeat every mandatory species arg."""
     kwargs = dict(
         x=np.asarray(x),
@@ -131,6 +131,7 @@ def _apply(x, param_names, base_input=None, base_soil=None, base_climate=None,
         base_tree_species_data=base_tree_species_data if base_tree_species_data is not None else {},
         base_crop_species_data=base_crop_species_data if base_crop_species_data is not None else {},
         base_pool_species_data=base_pool_species_data if base_pool_species_data is not None else {},
+        greenup_month=greenup_month,
     )
     if base_soil_model_params is not None:
         kwargs["base_soil_model_params"] = base_soil_model_params
@@ -410,25 +411,53 @@ def test_apply_design_row_litter_carbon_nitrogen_override_constants():
     assert result.litter_nitrogen == pytest.approx(0.03)
 
 
-def test_apply_design_row_soil_cover_sets_fraction_of_months_covered():
+def test_apply_design_row_soil_cover_anchors_to_greenup_month():
     """base_cover/proj_cover set round(x * 12) of the 12 calendar months to
     covered (still an exact 0/1 each, as RothC's cover_year == 1 test
-    requires), tiled across however many years the base array spans —
-    rather than assigning the drawn value itself to every element."""
+    requires), as a contiguous block starting at greenup_month (1=Jan..
+    12=Dec), tiled across however many years the base array spans — rather
+    than assigning the drawn value itself to every element."""
     base_input = {
         "base_cover": np.ones(24),   # 2 years, 12 months each
         "proj_cover": np.ones(24),
     }
 
-    result = _apply(x=[0.25, 1.0], param_names=["base_cover", "proj_cover"], base_input=base_input)
+    result = _apply(
+        x=[0.25, 1.0], param_names=["base_cover", "proj_cover"],
+        base_input=base_input, greenup_month=4,
+    )
 
-    expected_base_year = np.array([1.0] * 3 + [0.0] * 9)  # round(0.25*12) = 3 months covered
+    # round(0.25*12) = 3 months covered, starting at greenup (April = index 3)
+    expected_base_year = np.array([0., 0., 0., 1., 1., 1., 0., 0., 0., 0., 0., 0.])
     np.testing.assert_allclose(result.input_dict["base_cover"], np.tile(expected_base_year, 2))
     np.testing.assert_allclose(result.input_dict["proj_cover"], np.ones(24))  # x=1.0 -> all 12 months
 
     # x=0.0 -> no months covered
-    result = _apply(x=[0.0], param_names=["base_cover"], base_input=base_input)
+    result = _apply(x=[0.0], param_names=["base_cover"], base_input=base_input, greenup_month=4)
     np.testing.assert_allclose(result.input_dict["base_cover"], np.zeros(24))
+
+
+def test_apply_design_row_soil_cover_wraps_past_december():
+    """A late-year greenup wraps the covered block into the following
+    January rather than being clipped at year end."""
+    base_input = {"base_cover": np.ones(24)}
+
+    result = _apply(x=[0.25], param_names=["base_cover"], base_input=base_input, greenup_month=11)
+
+    # 3 months starting at greenup (November = index 10): Nov, Dec, Jan
+    expected_base_year = np.array([1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1.])
+    np.testing.assert_allclose(result.input_dict["base_cover"], np.tile(expected_base_year, 2))
+
+
+def test_apply_design_row_soil_cover_requires_greenup_month():
+    """Perturbing base_cover/proj_cover without a greenup_month raises a
+    clear error rather than guessing — greenup_month can't be reliably
+    inferred from the cover array itself (see apply_design_row()'s
+    docstring: that inference breaks once the covered block wraps past
+    December)."""
+    base_input = {"base_cover": np.ones(24)}
+    with pytest.raises(ValueError, match="greenup_month"):
+        _apply(x=[0.25], param_names=["base_cover"], base_input=base_input)
 
 
 def test_apply_design_row_tree_root_in_top_30_overrides_constant():

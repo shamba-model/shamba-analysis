@@ -1,7 +1,7 @@
 import re
 import csv
 import numpy as np
-from typing import Dict, List, NamedTuple, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 from model.soil_params import SoilParamsData
 from model.climate import ClimateData
@@ -234,6 +234,7 @@ def apply_design_row(
     base_crop_species_data: Dict[int, Dict],
     base_pool_species_data: Dict[int, Dict],
     base_soil_model_params: SoilModelParams = RothCParams(),
+    greenup_month: Optional[int] = None,
 ) -> MorrisDesignRowResult:
     """Map one row of the SALib design matrix to SHAMBA typed inputs.
 
@@ -264,6 +265,11 @@ def apply_design_row(
 
     Species/pool/RothC data is shallow-copied per family, not mutating the
     base_* arguments in place, mirroring monte_carlo/sampler.py.
+
+    greenup_month (1=Jan..12=Dec) anchors the base_cover/proj_cover screening
+    axis to the site's real growing-season start; required only if
+    base_cover/proj_cover are among param_names (see the "Soil cover" block
+    below).
     """
     vals = {param_names[i]: float(x[i]) for i in range(len(param_names))}
 
@@ -540,23 +546,29 @@ def apply_design_row(
     # fractional value to every element (which RothC would silently read as
     # "bare" unless it happened to be exactly 1), the drawn value in [0, 1]
     # sets how many of the 12 calendar months are flagged covered — round(x
-    # * 12) months — spread evenly across the year (Bresenham-style: month i
-    # covered iff (i+1)*n_covered // 12 != i*n_covered // 12) rather than
-    # bunched at the start, then tiled across however many years the base
-    # array spans. An earlier version front-loaded the covered months into
-    # a Jan-start block, which confounded the screening axis with each
-    # site's real wet/dry season timing (RothC's moisture rate modifier
-    # only "sees" cover in dry months — roth_c.py's get_acc_tsmd()) — even
-    # spacing keeps every individual month a real 0/1 RothC expects while
-    # avoiding that seasonal-alignment artefact.
+    # * 12) months. These months are applied continuously starting at
+    # greenup_month (1=Jan..12=Dec, matching run_morris_batch.py's 
+    # stage_site(), which builds the site's original base_/proj_cover 
+    # columns from the same convention), wrapping around the end of the 
+    # year, then tiled to the length of the original array. greenup_month
+    # is passed in explicitly as inferring it from base_array is unreliable 
+    # in case the covered block wraps past December.
+    if ("base_cover" in vals or "proj_cover" in vals) and greenup_month is None:
+        raise ValueError(
+            "Morris is perturbing base_cover/proj_cover but no greenup_month was "
+            "supplied to apply_design_row(). Pass --greenup-month through "
+            "run_morris_direct.py (run_morris_batch.py already knows each site's "
+            "greenup_month from the TestSites CSV and passes it through)."
+        )
+
     for direct_key in ("base_cover", "proj_cover"):
         if direct_key in vals and direct_key in input_dict:
             base_arr = np.asarray(base_input[direct_key], dtype=float)
+            month_pattern = np.zeros(12, dtype=float)
             n_covered = int(round(np.clip(vals[direct_key], 0.0, 1.0) * 12))
-            month_idx = np.arange(12)
-            month_pattern = (
-                (month_idx + 1) * n_covered // 12 != month_idx * n_covered // 12
-            ).astype(float)
+            covered_indexes = [(m - 1) % 12 for m in range(greenup_month, greenup_month + n_covered)]
+            for idx in covered_indexes:
+                month_pattern[idx] = 1
             n_periods = len(base_arr)
             tiled = np.tile(month_pattern, n_periods // 12)
             remainder = n_periods - len(tiled)

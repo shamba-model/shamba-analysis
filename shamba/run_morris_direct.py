@@ -52,6 +52,10 @@ def parse_args() -> argparse.Namespace:
                    help="Random seed for reproducibility (default: 42)")
     p.add_argument("--bounds-file", default=None,
                    help="Optional CSV with columns parameter,min,max to override default bounds")
+    p.add_argument("--greenup-month", type=int, default=None,
+                   help="Calendar month (1=Jan..12=Dec) the growing season starts. "
+                        "Required if the bounds file perturbs base_cover/proj_cover — "
+                        "anchors the cover-fraction screening axis to a real greenup date.")
     p.add_argument("--no-climate-api", action="store_true",
                    help="Skip the climate API and use local data only")
     p.add_argument("--no-soil-api", action="store_true",
@@ -122,6 +126,7 @@ def main() -> None:
         plot_index=0,
         base_emission_factors=EmissionFactors(),
         base_soil_model_params=RothCParams(),
+        greenup_month=args.greenup_month,
         allometry=[CONSTANTS.DEFAULT_ALLOMORPHY] * (args.n_base_cohorts + args.n_proj_cohorts),
         gwp=CONSTANTS.GWP_list[CONSTANTS.DEFAULT_GWP],
         on_progress=lambda done, total: print(f"  {done}/{total} runs complete"),

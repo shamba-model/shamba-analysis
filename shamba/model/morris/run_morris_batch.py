@@ -61,7 +61,7 @@ COMMON_COPY_FILES = (
 # Templates named "{}_*.csv": the "{}" becomes the site prefix (site_XXXX).
 TEMPLATE_GLOB = "{}_*.csv"
 
-# TestSites_withSoilGridsQs.csv's clay columns are raw SoilGrids units; divide
+# TestSites_SoilGridsQs_Greenup2024.csv's clay columns are raw SoilGrids units; divide
 # by this to match the 0-100 percentage read_soil_table() expects - the same
 # factor convert_units_in_api_response() applies on the live API path (see
 # UNIT_CONVERSIONS[PROPORTION_OF_CLAY_IN_FINE_FRACTION] in data_sources/soil.py).
@@ -69,16 +69,18 @@ CLAY_UNIT_CONVERSION_FACTOR = 10
 
 # TestSites columns, in file order. soil-info.csv needs a subset of these.
 TESTSITES_COLUMNS = (
-    "lat", "lon", "kg_class", "ttc", "landcover_crop_frac",
-    "ocs", "clay", "ocs_q05", "ocs_q95", "clay_q05", "clay_q95",
+    "id", "lat", "lon", "kg_class", "landcover_crop_frac", "ttc", 
+    "greenup_cycle_used", "is_filled", "greenup_month", "greenup_date",
+    "Greenup_1", "Greenup_2", "ocs", "ocs_q05", "ocs_q95", "clay", 
+    "clay_q05", "clay_q95",
 )
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--testsites", default=str(INPUTS_DIR / "TestSites_withSoilGridsQs.csv"),
-                   help="TestSites CSV; one data row per site (default: TestSites_withSoilGridsQs.csv)")
+    p.add_argument("--testsites", default=str(INPUTS_DIR / "TestSites_SoilGridsQs_Greenup2024.csv"),
+                   help="TestSites CSV; one data row per site (default: TestSites_SoilGridsQs_Greenup2024.csv)")
     p.add_argument("--bounds-file", default=str(COMMON_INPUTS_DIR / "bounds_file.csv"),
                    help="Morris bounds CSV passed through to run_morris_direct.py")
     p.add_argument("--start", type=int, default=0,
@@ -174,16 +176,37 @@ def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str,
 
     # Climate/cover data: source is already named site_XXXX_climate_cover_data.csv,
     # which is exactly the split-file name the reader expects.
+    greenup_month = int(site_row["greenup_month"])
+    cover_col = [0] * 12
+    covered_indexes = [(int(m) - 1)% 12 for m in range(greenup_month, greenup_month + 6)]  # 0-based, inclusive of greenup_month
+    for idx in covered_indexes:
+        cover_col[idx] = 1
+
     climate_src = CLIMATE_COVER_DIR / f"{prefix}_climate_cover_data.csv"
     if not climate_src.exists():
         raise FileNotFoundError(f"missing climate file for site {site_index}: {climate_src}")
-    shutil.copyfile(climate_src, input_dir / climate_src.name)
+
+    with climate_src.open(newline="") as f:
+        reader = csv.DictReader(f)
+        header = reader.fieldnames or []
+        rows = list(reader)
+        i = 0
+        for row in rows:
+            row["proj_cover"] = cover_col[i % 12]
+            row["base_cover"] = cover_col[i % 12]
+            i += 1
+        # Write the updated rows back to the climate file
+        with (input_dir / climate_src.name).open("w", newline="") as out_f:
+            writer = csv.DictWriter(out_f, fieldnames=header)
+            writer.writeheader()
+            writer.writerows(rows)
+        
 
     # soil-info.csv, built from this site's TestSites row. plot_name=0 matches the
     # constant used in the shared {}_plot_data.csv template. Columns per
     # read_soil_table() in data_sources/soil.py.
     #
-    # TestSites_withSoilGridsQs.csv's clay/clay_q05/clay_q95 columns are raw
+    # TestSites_SoilGridsQs_Greenup2024.csv's clay/clay_q05/clay_q95 columns are raw
     # SoilGrids units (see append_soilgrids_quantiles.py's docstring), not a
     # 0-100 percentage. read_soil_table() applies no conversion (it expects an
     # already-correct percentage, unlike the live API path, which divides by
@@ -245,7 +268,7 @@ def fmt_duration(seconds: float) -> str:
     return f"{s}s"
 
 
-def run_site(project_name: str, prefix: str, args: argparse.Namespace,
+def run_site(project_name: str, prefix: str, greenup_month: int, args: argparse.Namespace,
              log_path: Path) -> int:
     """Run run_morris_direct.py for one site. Returns the subprocess return code."""
     cmd = [
@@ -258,6 +281,7 @@ def run_site(project_name: str, prefix: str, args: argparse.Namespace,
         "--num-levels", str(args.num_levels),
         "--seed", str(args.seed),
         "--bounds-file", str(Path(args.bounds_file).resolve()),
+        "--greenup-month", str(greenup_month),
         "--no-soil-api", "--no-climate-api",
     ]
     if args.dry_run:
@@ -353,7 +377,8 @@ def main() -> None:
 
         log_path = PROJECTS_DIR / project_name / "morris_run.log"
         site_start = time.monotonic()
-        returncode = run_site(project_name, prefix, args, log_path)
+        greenup_month = int(sites[site_index]["greenup_month"])
+        returncode = run_site(project_name, prefix, greenup_month, args, log_path)
         elapsed = time.monotonic() - site_start
 
         # Copy the per-site log alongside the other collected outputs, so

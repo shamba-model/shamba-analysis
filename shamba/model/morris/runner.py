@@ -32,6 +32,7 @@ class _MorrisSampleArgs(NamedTuple):
     plot_index: int
     allometry: List[str]
     gwp: dict
+    greenup_month: Optional[int] = None
 
 
 def _run_single_morris(args: _MorrisSampleArgs) -> np.ndarray:
@@ -46,6 +47,7 @@ def _run_single_morris(args: _MorrisSampleArgs) -> np.ndarray:
         base_crop_species_data=args.crop_species_data,
         base_pool_species_data=args.pool_species_data,
         base_soil_model_params=args.base_soil_model_params,
+        greenup_month=args.greenup_month,
     )
     result = handle_intervention(
         intervention_input=design.input_dict,
@@ -116,6 +118,7 @@ def run_morris(
     allometry: Optional[List[str]] = None,
     gwp: dict = CONSTANTS.GWP_list[CONSTANTS.DEFAULT_GWP],
     on_progress: Optional[Callable[[int, int], None]] = None,
+    greenup_month: Optional[int] = None,
 ) -> np.ndarray:
     """Run handle_intervention() for each row in X.
 
@@ -145,6 +148,7 @@ def run_morris(
             plot_index=plot_index,
             allometry=allometry,
             gwp=gwp,
+            greenup_month=greenup_month,
         )
         for i in range(n_runs)
     ]
