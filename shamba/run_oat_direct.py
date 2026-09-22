@@ -19,6 +19,7 @@ def build_oat_sample_args(
     plot_index: int,
     allometry: List[str],
     gwp: dict,
+    greenup_month: int,
 ) -> List[_MorrisSampleArgs]:
     """
     Build a list of _MorrisSampleArgs for the OAT analysis.
@@ -39,6 +40,7 @@ def build_oat_sample_args(
     common_dict = {
         "base_input": ctx.vector_input_data,
         "base_soil": ctx.soil_params,
+        "greenup_month": greenup_month,
         "base_climate": ctx.climate,
         "tree_species_data": ctx.tree_species_data,
         "crop_species_data": ctx.crop_species_data,
@@ -127,6 +129,10 @@ def parse_args() -> argparse.Namespace:
                    help="Number of baseline tree cohorts (default: 0)")
     p.add_argument("--bounds-file", default=None,
                    help="Optional CSV with columns parameter,min,max to override default bounds")
+    p.add_argument("--greenup-month", type=int, default=None,
+                   help="Calendar month (1=Jan..12=Dec) the growing season starts. "
+                        "Required if the bounds file perturbs base_cover/proj_cover — "
+                        "anchors the cover-fraction screening axis to a real greenup date.")
     p.add_argument("--no-climate-api", action="store_true",
                    help="Skip the climate API and use local data only")
     p.add_argument("--no-soil-api", action="store_true",
@@ -162,6 +168,7 @@ def main() -> None:
         plot_index=0,  # Assuming a single plot for OAT analysis
         allometry=[CONSTANTS.DEFAULT_ALLOMORPHY] * (args.n_proj_cohorts + args.n_base_cohorts),
         gwp=CONSTANTS.GWP_list[CONSTANTS.DEFAULT_GWP],
+        greenup_month=args.greenup_month,
     )
 
     Y = run_oat(run_list)

@@ -63,24 +63,26 @@ COMMON_COPY_FILES = (
 # Templates named "{}_*.csv": the "{}" becomes the site prefix (site_XXXX).
 TEMPLATE_GLOB = "{}_*.csv"
 
-# TestSites_withSoilGridsQs.csv's clay columns are raw SoilGrids units; divide
+# TestSites_SoilGridsQs_Greenup2024.csv's clay columns are raw SoilGrids units; divide
 # by this to match the 0-100 percentage read_soil_table() expects - the same
 # factor convert_units_in_api_response() applies on the live API path (see
 # UNIT_CONVERSIONS[PROPORTION_OF_CLAY_IN_FINE_FRACTION] in data_sources/soil.py).
 CLAY_UNIT_CONVERSION_FACTOR = 10
 
-# TestSites_withSoilGridsQs.csv columns, in file order. soil-info.csv needs a subset of these.
+# TestSites_SoilGridsQs_Greenup2024.csv columns, in file order. soil-info.csv needs a subset of these.
 TESTSITES_COLUMNS = (
-    "lat", "lon", "kg_class", "ttc", "landcover_crop_frac",
-    "ocs", "clay", "ocs_q05", "ocs_q95", "clay_q05", "clay_q95",
+    "id", "lat", "lon", "kg_class", "landcover_crop_frac", "ttc", 
+    "greenup_cycle_used", "is_filled", "greenup_month", "greenup_date",
+    "Greenup_1", "Greenup_2", "ocs", "ocs_q05", "ocs_q95", "clay", 
+    "clay_q05", "clay_q95",
 )
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--testsites", default=str(INPUTS_DIR / "TestSites_withSoilGridsQs.csv"),
-                   help="TestSites CSV; one data row per site (default: TestSites_withSoilGridsQs.csv)")
+    p.add_argument("--testsites", default=str(INPUTS_DIR / "TestSites_SoilGridsQs_Greenup2024.csv"),
+                   help="TestSites CSV; one data row per site (default: TestSites_SoilGridsQs_Greenup2024.csv)")
     p.add_argument("--bounds-file", default=str(COMMON_INPUTS_DIR / "bounds_file.csv"),
                    help="OAT bounds CSV passed through to run_oat_direct.py")
     p.add_argument("--start", type=int, default=0,
@@ -151,10 +153,10 @@ def aggregate_results(results_dir: Path) -> Path | None:
     return out_path
 
 
-def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str, str, Path]:
+def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str, str, Path, int]:
     """Create projects/oat_batch_XXXX/input/ and populate it.
 
-    Returns (project_name, prefix, input_dir).
+    Returns (project_name, prefix, input_dir, greenup_month).
     """
     padded = f"{site_index:04d}"
     project_name = f"oat_batch_{padded}"
@@ -175,7 +177,7 @@ def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str,
     # constant used in the shared {}_plot_data.csv template. Columns per
     # read_soil_table() in data_sources/soil.py.
     #
-    # TestSites_withSoilGridsQs.csv's clay/clay_q05/clay_q95 columns are raw
+    # TestSites_SoilGridsQs_Greenup2024.csv's clay/clay_q05/clay_q95 columns are raw
     # SoilGrids units (see append_soilgrids_quantiles.py's docstring), not a
     # 0-100 percentage. read_soil_table() applies no conversion (it expects an
     # already-correct percentage, unlike the live API path, which divides by
@@ -193,6 +195,8 @@ def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str,
             float(site_row["clay_q95"]) / CLAY_UNIT_CONVERSION_FACTOR,
         ])
 
+    greenup_month = int(site_row["greenup_month"])
+
     # Species-lookup tables and the bounds file, copied verbatim so the project
     # folder is self-contained and reproducible.
     for name in COMMON_COPY_FILES:
@@ -204,7 +208,7 @@ def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str,
         suffix = template.name[len("{}"):]          # e.g. "_plot_data.csv"
         shutil.copyfile(template, input_dir / f"{prefix}{suffix}")
 
-    return project_name, prefix, input_dir
+    return project_name, prefix, input_dir, greenup_month
 
 
 def collect_outputs(project_name: str, results_dir: Path) -> bool:
@@ -237,7 +241,7 @@ def fmt_duration(seconds: float) -> str:
     return f"{s}s"
 
 
-def run_site(project_name: str, prefix: str, args: argparse.Namespace,
+def run_site(project_name: str, prefix: str, args: argparse.Namespace, greenup_month: int,
              log_path: Path) -> int:
     """Run run_oat_direct.py for one site. Returns the subprocess return code."""
     cmd = [
@@ -246,6 +250,7 @@ def run_site(project_name: str, prefix: str, args: argparse.Namespace,
         "--prefix", prefix,
         "--n-proj-cohorts", str(args.n_proj_cohorts),
         "--n-base-cohorts", str(args.n_base_cohorts),
+        "--greenup-month", str(greenup_month),
         "--bounds-file", str(Path(args.bounds_file).resolve()),
         "--no-soil-api", "--no-climate-api",
     ]
@@ -328,7 +333,7 @@ def main() -> None:
             continue
 
         try:
-            _, prefix, _ = stage_site(site_index, soil_info[site_index], bounds_path)
+            _, prefix, _, greenup_month = stage_site(site_index, soil_info[site_index], bounds_path)
         except (FileNotFoundError, KeyError, ValueError) as exc:
             n_done += 1
             n_failed += 1
@@ -341,7 +346,7 @@ def main() -> None:
 
         log_path = PROJECTS_DIR / project_name / "oat_run.log"
         site_start = time.monotonic()
-        returncode = run_site(project_name, prefix, args, log_path)
+        returncode = run_site(project_name, prefix, args, greenup_month, log_path)
         elapsed = time.monotonic() - site_start
 
         # Copy the per-site log alongside the other collected outputs, so
