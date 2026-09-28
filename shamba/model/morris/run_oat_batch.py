@@ -167,11 +167,33 @@ def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str,
     input_dir.mkdir(parents=True, exist_ok=True)
 
     # Climate/cover data: source is already named site_XXXX_climate_cover_data.csv,
-    # which is exactly the split-file name the reader expects.
+    # which is exactly the split-file name the reader expects. base_cover/
+    # proj_cover are overwritten with a 6-month window anchored at the site's
+    # real greenup_month (matching run_morris_batch.py's stage_site()) rather
+    # than left as the climate-fetch script's default full-year cover — the
+    # OAT baseline row doesn't perturb cover at all, so this is the only place
+    # that fixes it up.
+    greenup_month = int(site_row["greenup_month"])
+    cover_col = [0] * 12
+    covered_indexes = [(int(m) - 1) % 12 for m in range(greenup_month, greenup_month + 6)]  # 0-based, inclusive of greenup_month
+    for idx in covered_indexes:
+        cover_col[idx] = 1
+
     climate_src = CLIMATE_COVER_DIR / f"{prefix}_climate_cover_data.csv"
     if not climate_src.exists():
         raise FileNotFoundError(f"missing climate file for site {site_index}: {climate_src}")
-    shutil.copyfile(climate_src, input_dir / climate_src.name)
+
+    with climate_src.open(newline="") as f:
+        reader = csv.DictReader(f)
+        header = reader.fieldnames or []
+        rows = list(reader)
+        for i, row in enumerate(rows):
+            row["proj_cover"] = cover_col[i % 12]
+            row["base_cover"] = cover_col[i % 12]
+        with (input_dir / climate_src.name).open("w", newline="") as out_f:
+            writer = csv.DictWriter(out_f, fieldnames=header)
+            writer.writeheader()
+            writer.writerows(rows)
 
     # soil-info.csv, built from this site's TestSites row. plot_name=0 matches the
     # constant used in the shared {}_plot_data.csv template. Columns per
@@ -194,8 +216,6 @@ def stage_site(site_index: int, site_row: dict, bounds_file: Path) -> tuple[str,
             float(site_row["clay_q05"]) / CLAY_UNIT_CONVERSION_FACTOR,
             float(site_row["clay_q95"]) / CLAY_UNIT_CONVERSION_FACTOR,
         ])
-
-    greenup_month = int(site_row["greenup_month"])
 
     # Species-lookup tables and the bounds file, copied verbatim so the project
     # folder is self-contained and reproducible.
