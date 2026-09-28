@@ -21,6 +21,8 @@ def _species_ctx():
 
 @pytest.mark.parametrize("name", [
     "cy0", "temp_ci_delta",                          # flat scalar
+    "cy0_flat_scale", "clay_flat_scale",             # soil, flat override family
+    "temp_flat_delta", "rain_flat_scale", "evap_flat_scale",  # climate, flat override family
     "roth_c_temp_a1",                                # RothC field
     "tree_wood_dens_sp1", "tree_nitrogen_sp1",       # tree scalar / whole-vector
     "tree_nitrogen_leaf_sp1",                        # tree per-element

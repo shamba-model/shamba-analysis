@@ -170,6 +170,55 @@ def test_apply_design_row_climate_perturbations():
     assert np.all(result.climate.rain == 0.0)
 
 
+def test_apply_design_row_soil_flat_scale():
+    """cy0_flat_scale/clay_flat_scale multiply the resolved cy0/clay (base or
+    drawn), and Ceq/iom recompute from the scaled cy0. clay_flat_scale clamps
+    the result to 100."""
+    base_soil = _make_soil(cy0=50.0, clay=95.0)
+
+    result = _apply(x=[1.1], param_names=["cy0_flat_scale"], base_soil=base_soil)
+    expected_cy0 = 50.0 * 1.1
+    assert result.soil.Cy0 == pytest.approx(expected_cy0)
+    assert result.soil.Ceq == pytest.approx(1.25 * expected_cy0)
+    assert result.soil.iom == pytest.approx(0.049 * (1.25 * expected_cy0) ** 1.139)
+
+    result = _apply(x=[1.2], param_names=["clay_flat_scale"], base_soil=base_soil)
+    assert result.soil.clay == pytest.approx(100.0)  # 95 * 1.2 clamped to 100
+
+    result = _apply(
+        x=[70.0, 1.1], param_names=["cy0", "cy0_flat_scale"], base_soil=base_soil,
+    )
+    assert result.soil.Cy0 == pytest.approx(70.0 * 1.1)  # composes with direct cy0
+
+
+def test_apply_design_row_climate_flat_family():
+    """temp_flat_delta shifts every month by the same fixed amount regardless
+    of temperature_std (including an all-zero std); rain_flat_scale/
+    evap_flat_scale multiply the resolved arrays and stay clipped to >= 0."""
+    base_climate = _make_climate()  # all stds zero
+
+    result = _apply(x=[1.0], param_names=["temp_flat_delta"], base_climate=base_climate)
+    np.testing.assert_allclose(result.climate.temperature, base_climate.temperature + 1.0)
+
+    result = _apply(x=[0.9], param_names=["rain_flat_scale"], base_climate=base_climate)
+    np.testing.assert_allclose(result.climate.rain, base_climate.rain * 0.9)
+
+    result = _apply(x=[0.0], param_names=["evap_flat_scale"], base_climate=base_climate)
+    assert np.all(result.climate.evaporation == 0.0)
+
+    z_95 = 1.96
+    temp_std = np.linspace(0.5, 2.0, 12)
+    base_climate_std = _make_climate(temperature_std=temp_std)
+    result = _apply(
+        x=[0.5, 1.0], param_names=["temp_ci_delta", "temp_flat_delta"],
+        base_climate=base_climate_std,
+    )
+    np.testing.assert_allclose(
+        result.climate.temperature,
+        base_climate_std.temperature + 0.5 * z_95 * temp_std + 1.0,
+    )
+
+
 def test_apply_design_row_roth_c_field_applies():
     """roth_c_temp_a1 overrides only that field; other RothCParams fields keep defaults."""
     base = RothCParams()

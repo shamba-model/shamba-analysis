@@ -102,6 +102,14 @@ SCALAR_PARAMETER_NAMES: FrozenSet[str] = frozenset({ ##
     # moves by x * 1.96 * that month's own std — one axis per variable, but
     # the per-month magnitude still reflects real site data.
     "temp_ci_delta", "rain_ci_delta", "evap_ci_delta",
+    # Soil/climate — flat scales, applying a fixed perturbation regardless 
+    # of site data variability: cy0/clay/rain/evap scale by the drawn 
+    # multiplier (scale, base * x, centred on 1); temperature shifts by 
+    # the drawn value in degrees C, applied uniformly across every
+    # month (delta, base + x, centred on 0). 
+    # Not part of default_bounds(), use via a --bounds-file.
+    "cy0_flat_scale", "clay_flat_scale",
+    "temp_flat_delta", "rain_flat_scale", "evap_flat_scale",
     # Emission factors — scale for the burn EFs (multiplier on the fixed
     # global constant, centred on 1); direct for the rest.
     "ef_burn_crop_N2O_scale", "ef_burn_crop_CH4_scale",

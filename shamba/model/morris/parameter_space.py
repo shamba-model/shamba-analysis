@@ -263,6 +263,13 @@ def apply_design_row(
     from below for rain/evaporation). Thinning-fraction/mortality-fraction and
     sf_n proportions are clamped to [0, 1] after the delta is applied.
 
+    cy0_flat_scale/clay_flat_scale/temp_flat_delta/rain_flat_scale/
+    evap_flat_scale are flat-perturbations layered on top of
+    the above (see parameter_registry.py): cy0/clay/rain/evap scale by a
+    multiplier independent of any quantile/std data, and temp shifts by a
+    fixed number of degrees applied equally to every month. They default to
+    neutral (scale=1, delta=0).
+
     Species/pool/RothC data is shallow-copied per family, not mutating the
     base_* arguments in place, mirroring monte_carlo/sampler.py.
 
@@ -276,8 +283,10 @@ def apply_design_row(
     input_dict = dict(base_input)
 
     # --- Soil ---
-    cy0 = vals.get("cy0", base_soil.Cy0)
-    clay = vals.get("clay", base_soil.clay)
+    cy0 = vals.get("cy0", base_soil.Cy0) * vals.get("cy0_flat_scale", 1.0)
+    cy0 = max(cy0, 0.0)
+    clay = vals.get("clay", base_soil.clay) * vals.get("clay_flat_scale", 1.0)
+    clay = min(max(clay, 0.0), 100.0)
     ceq_multiplier = vals.get("cy0_to_ceq_multiplier", 1.25)
     ceq = ceq_multiplier * cy0
     iom = 0.049 * ceq ** 1.139
@@ -303,10 +312,17 @@ def apply_design_row(
     temp_ci_delta = vals.get("temp_ci_delta", 0.0)
     rain_ci_delta = vals.get("rain_ci_delta", 0.0)
     evap_ci_delta = vals.get("evap_ci_delta", 0.0)
+    # Flat family: temp_flat_delta is a fixed number of degrees added equally
+    # to every month (no std scaling); rain_flat_scale/evap_flat_scale are
+    # flat multipliers applied after the CI-delta term, ahead of the
+    # zero-floor clip below.
+    temp_flat_delta = vals.get("temp_flat_delta", 0.0)
+    rain_flat_scale = vals.get("rain_flat_scale", 1.0)
+    evap_flat_scale = vals.get("evap_flat_scale", 1.0)
     climate = ClimateData(
-        temperature=base_climate.temperature + temp_ci_delta * _Z_95 * base_climate.temperature_std,
-        rain=np.clip(base_climate.rain + rain_ci_delta * _Z_95 * base_climate.rain_std, 0.0, None),
-        evaporation=np.clip(base_climate.evaporation + evap_ci_delta * _Z_95 * base_climate.evaporation_std, 0.0, None),
+        temperature=base_climate.temperature + temp_ci_delta * _Z_95 * base_climate.temperature_std + temp_flat_delta,
+        rain=np.clip((base_climate.rain + rain_ci_delta * _Z_95 * base_climate.rain_std) * rain_flat_scale, 0.0, None),
+        evaporation=np.clip((base_climate.evaporation + evap_ci_delta * _Z_95 * base_climate.evaporation_std) * evap_flat_scale, 0.0, None),
         temperature_std=base_climate.temperature_std,
         rain_std=base_climate.rain_std,
         evaporation_std=base_climate.evaporation_std,

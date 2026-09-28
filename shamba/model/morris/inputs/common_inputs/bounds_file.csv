@@ -79,3 +79,8 @@ tree_root_to_shoot_sp1,0.9,1.1
 tree_wood_dens_sp1,0.54,0.66
 volatile_frac_organic_fertiliser,0.189,0.231
 volatile_frac_synthetic_fertiliser,0.099,0.121
+cy0_flat_scale,0.9,1.1
+clay_flat_scale,0.9,1.1
+temp_flat_delta,-1,1
+rain_flat_scale,0.9,1.1
+evap_flat_scale,0.9,1.1
