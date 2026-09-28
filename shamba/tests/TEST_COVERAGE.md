@@ -91,7 +91,8 @@
 ### `get_rmf()` — Rate Modifying Factor
 | Test | Purpose |
 |------|---------|
-| `test_rmf_equals_one_when_rain_always_exceeds_evap` | Always-wet climate triggers the short-circuit branch, returning b.mean()=1.0 for all years |
+| `test_rmf_applies_temperature_and_cover_when_rain_always_exceeds_evap` | Always-wet climate gives b=1, so RMF = a·c; asserts the exact value for bare and covered soil at 20 °C |
+| `test_multi_year_climate_uses_each_years_own_moisture_deficit` | Wet year then drought year: each year's RMF matches its single-year result (guards the per-year slicing) |
 | `test_severe_drought_gives_lower_rmf_than_mild_drought` | Larger moisture deficit → smaller b factor → lower RMF (tests the full moisture calculation path) |
 | `test_soil_cover_reduces_rmf_under_drought` | Soil cover applies c=0.6 instead of 1.0, reducing the RMF |
 

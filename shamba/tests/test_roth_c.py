@@ -33,8 +33,8 @@ def _make_soil(Cy0=40.0, clay=20.0):
 def _make_wet_climate(temp=20.0):
     """Always-wet climate: rain > evap every month.
 
-    When rain always exceeds evaporation the RMF code short-circuits and
-    returns b.mean() = 1.0 without evaluating the temperature or cover factors.
+    When rain always exceeds evaporation there is no moisture deficit, so the
+    moisture factor b is 1 in every month; temperature and cover still apply.
     """
     return ClimateData(
         temperature=np.full(12, temp),
@@ -91,23 +91,47 @@ def _make_litter_input(n_years, carbon_per_year):
 
 class TestGetRmf:
 
-    def test_rmf_equals_one_when_rain_always_exceeds_evap(self):
-        # When deficit = rain - evap > 0 every month, the code sets
-        # rain_always_exceeds_evaporation = True and returns b.mean() = 1.0
-        # before applying temperature or cover factors.
+    def test_rmf_applies_temperature_and_cover_when_rain_always_exceeds_evap(self):
+        # When rain > evap every month, b = 1 in every month, so the RMF is
+        # a * c. Previously the code returned b.mean() = 1.0 here and skipped
+        # the temperature and cover factors entirely.
         soil = _make_soil()
-        climate = _make_wet_climate()
-        cover = np.zeros(12)
+        climate = _make_wet_climate(temp=20.0)
         n_years = 5
-        result = roth_c.get_rmf(climate=climate, cover=cover, soil=soil, no_of_years=n_years)
-        np.testing.assert_allclose(result, np.ones(n_years))
+        # RothC temperature factor at 20 C with default constants (47.91, 106.06, 18.27)
+        a_20 = 47.91 / (1.0 + np.exp(106.06 / (20.0 + 18.27)))  # ≈ 2.82
+
+        rmf_bare = roth_c.get_rmf(climate=climate, cover=np.zeros(12), soil=soil, no_of_years=n_years)
+        np.testing.assert_allclose(rmf_bare, np.full(n_years, a_20))
+
+        rmf_covered = roth_c.get_rmf(climate=climate, cover=np.ones(12), soil=soil, no_of_years=n_years)
+        np.testing.assert_allclose(rmf_covered, np.full(n_years, a_20 * 0.6))
+
+    def test_multi_year_climate_uses_each_years_own_moisture_deficit(self):
+        # Year 1 wet, year 2 drought (same temperature). Each year's RMF must
+        # match the single-year result for that year's climate — i.e. year 2's
+        # moisture deficit is computed from year 2's rain/evap, not year 1's.
+        soil = _make_soil()
+        cover = np.zeros(12)
+        wet = _make_wet_climate(temp=20.0)
+        drought = _make_drought_climate()
+        two_year = ClimateData(
+            temperature=np.concatenate([wet.temperature, drought.temperature]),
+            rain=np.concatenate([wet.rain, drought.rain]),
+            evaporation=np.concatenate([wet.evaporation, drought.evaporation]),
+        )
+        rmf_wet = roth_c.get_rmf(wet, cover, soil, no_of_years=1)
+        rmf_drought = roth_c.get_rmf(drought, cover, soil, no_of_years=1)
+
+        result = roth_c.get_rmf(two_year, cover, soil, no_of_years=2)
+        assert result[0] == pytest.approx(rmf_wet[0])
+        assert result[1] == pytest.approx(rmf_drought[0])
+        assert result[1] < result[0]
 
     def test_severe_drought_gives_lower_rmf_than_mild_drought(self):
         # Both climates go through the full RMF calculation (both have some months
         # where rain < evap). Severe drought accumulates a larger soil moisture deficit,
         # so the moisture factor b is lower → lower RMF.
-        # Note: the "always wet" bypass returns b.mean()=1.0 *without* the temperature
-        # factor, so wet vs drought is not a valid comparison for this test.
         soil = _make_soil()
         cover = np.zeros(12)
         rmf_mild = roth_c.get_rmf(_make_mild_drought_climate(), cover, soil, no_of_years=1)
